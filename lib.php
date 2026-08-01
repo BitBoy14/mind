@@ -26,9 +26,26 @@ function require_auth_api(): void {
     }
 }
 
+/**
+ * Tilkoblingsstreng til MINDs dedikerte mongod (127.0.0.1:27018, auth pa).
+ * Bruker/passord ligger ALDRI i denne filen (repoet er offentlig) - de leses
+ * runtime fra /etc/mind/secrets.conf via read_secrets().
+ */
+function mind_mongo_uri(): string {
+    $s = read_secrets();
+    $u = (string)($s['MONGODB_MIND_USER'] ?? '');
+    $p = (string)($s['MONGODB_MIND_PASSWORD'] ?? '');
+    if ($u === '' || $p === '') {
+        error_log('MIND: MONGODB_MIND_USER/-PASSWORD mangler i ' . SECRETS_FILE);
+        return 'mongodb://127.0.0.1:27018/';
+    }
+    return 'mongodb://' . rawurlencode($u) . ':' . rawurlencode($p)
+         . '@127.0.0.1:27018/?authSource=admin';
+}
+
 function mongo(): MongoDB\Driver\Manager {
     static $m = null;
-    if ($m === null) $m = new MongoDB\Driver\Manager('mongodb://127.0.0.1:27017');
+    if ($m === null) $m = new MongoDB\Driver\Manager(mind_mongo_uri());
     return $m;
 }
 

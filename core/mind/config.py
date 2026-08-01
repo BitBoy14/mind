@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import stat
+from urllib.parse import quote_plus
 
 log = logging.getLogger("mind.config")
 
@@ -22,9 +23,17 @@ SECRETS_FILE = os.path.join(ETC_DIR, "secrets.conf")
 ENC_KEY_FILE = os.path.join(ETC_DIR, "enc_key")
 SUDO_PASS_FILE = os.path.join(ETC_DIR, "sudo_pass")
 
-MONGO_URI = "mongodb://127.0.0.1:27017"
+# MIND-basen ligger paa en dedikert, autentisert mongod-instans (Spor I):
+# 127.0.0.1:27018, kun localhost, authorization enabled. Bruker og passord
+# ligger ALDRI i koden - de leses runtime fra /etc/mind/secrets.conf via
+# mongo_uri() lenger ned i denne filen.
+MONGO_HOST = "127.0.0.1"
+MONGO_PORT = 27018
 DB_NAME = "mind"
 
+# Jarvis-basen deles med JARVIS-appen og blir liggende paa den delte,
+# auth-lose instansen paa 27017. Egen klient i db.jarvis_db().
+JARVIS_MONGO_URI = "mongodb://127.0.0.1:27017"
 JARVIS_DB_NAME = "jarvis"
 
 # Fallback-modelliste når /v1/models ikke er tilgjengelig (§2.1).
@@ -139,6 +148,37 @@ def get_secret(name):
         return decrypt(enc)
     except Exception:
         return ""
+
+
+def get_plain_secret(name):
+    """Les en ukryptert verdi fra secrets.conf (f.eks. MONGODB_MIND_USER)."""
+    raw = _read_secrets_file()
+    if not raw:
+        return ""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return ""
+    return data.get(name, "") or ""
+
+
+def mongo_uri():
+    """Tilkoblingsstreng til MINDs dedikerte mongod (127.0.0.1:27018).
+
+    Credentials leses ved hvert kall fra /etc/mind/secrets.conf og skal aldri
+    logges eller skrives til repoet. Mangler de, returneres en URI uten
+    credentials - da feiler tilkoblingen med en tydelig autentiseringsfeil
+    i stedet for aa peke paa feil instans.
+    """
+    user = get_plain_secret("MONGODB_MIND_USER")
+    pwd = get_plain_secret("MONGODB_MIND_PASSWORD")
+    if not user or not pwd:
+        log.error(
+            "MONGODB_MIND_USER/-PASSWORD mangler i %s - kan ikke autentisere "
+            "mot MIND-databasen paa %s:%d", SECRETS_FILE, MONGO_HOST, MONGO_PORT)
+        return "mongodb://%s:%d/" % (MONGO_HOST, MONGO_PORT)
+    return "mongodb://%s:%s@%s:%d/?authSource=admin" % (
+        quote_plus(user), quote_plus(pwd), MONGO_HOST, MONGO_PORT)
 
 
 def anthropic_api_key():

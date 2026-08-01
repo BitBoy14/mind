@@ -23,12 +23,13 @@ from pymongo import MongoClient, ASCENDING, DESCENDING
 from . import config
 
 _client = None
+_jarvis_client = None
 
 
 def client():
     global _client
     if _client is None:
-        _client = MongoClient(config.MONGO_URI)
+        _client = MongoClient(config.mongo_uri())
     return _client
 
 
@@ -37,7 +38,12 @@ def db():
 
 
 def jarvis_db():
-    return client()[config.JARVIS_DB_NAME]
+    """Jarvis-basen ligger fortsatt paa den delte instansen (27017), ikke paa
+    MINDs dedikerte, autentiserte instans - derfor en egen klient (§7.3)."""
+    global _jarvis_client
+    if _jarvis_client is None:
+        _jarvis_client = MongoClient(config.JARVIS_MONGO_URI)
+    return _jarvis_client[config.JARVIS_DB_NAME]
 
 
 def ensure_indexes():
