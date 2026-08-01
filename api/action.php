@@ -21,6 +21,9 @@ function fail(string $msg, int $code = 400): void {
 // ---- innlogging (uten auth) ----
 if ($action === 'login') {
     if (($in['password'] ?? '') === LOGIN_PASSWORD) {
+        // Mot session fixation: ny sesjons-ID ved vellykket innlogging, slik at
+        // en forhandsplantet MINDSESS-verdi ikke kan gjenbrukes som innlogget.
+        session_regenerate_id(true);
         $_SESSION['mind_auth'] = true;
         refresh_models(); // §2.1: modelliste hentes oppdatert ved hver innlogging
         ok();
