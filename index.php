@@ -50,6 +50,8 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 .panel h2 { margin:0; padding:9px 14px; font-size:13px; text-transform:uppercase;
   letter-spacing:1px; color:var(--dim); border-bottom:1px solid var(--border);
   display:flex; align-items:center; gap:8px; }
+#grid > div:not(#chatpanel) > .panel > h2 { background:#e9edf3; color:#1c2330; }
+#grid > div:not(#chatpanel) > .panel > h2 .muted { color:#5a6472; }
 .panel .body { padding:10px 14px; max-height:460px; overflow-y:auto; }
 .item { border-bottom:1px solid var(--border); padding:8px 0; }
 .item:last-child { border-bottom:none; }
