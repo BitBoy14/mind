@@ -1,0 +1,18 @@
+[Unit]
+Description=MIND - persistent hovedhjerne (orkestrator-daemon)
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=mads
+Group=mads
+WorkingDirectory=/var/www/www.shrtct.site/mind/core
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/mads/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/var/www/www.shrtct.site/mind/core/venv/bin/python -m mind.daemon
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

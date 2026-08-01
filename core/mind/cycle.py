@@ -106,9 +106,12 @@ def _build_call(kind, events):
         parts.append(prompts.get("night_curation"))
     elif kind == "tanke":
         parts.append("Dette er en planlagt TANKE-ØKT i stillhet: ingen ytre "
-                     "hendelser krever deg. Tenk videre på egne ideer, "
-                     "prosjekter og forberedelser – eller konstater ærlig "
-                     "tomgang hvis det ikke er noe reelt å gjøre.")
+                     "hendelser krever deg. Følg dine egne indre tanker dit "
+                     "brukeren aldri ville promptet deg: gå dypere i pågående "
+                     "tråder (se arbeidsnotatet), start egne prosjekter, "
+                     "deleger undersøkelser, forbered ting brukeren vil "
+                     "trenge – eller konstater ærlig tomgang hvis det ikke "
+                     "er noe reelt å gjøre.")
     parts.append("Utfør syklusens plikter og svar med KUN JSON-kontrakten.")
     user_prompt = "\n\n".join(parts)
     return [identity, index, sections_txt], user_prompt
