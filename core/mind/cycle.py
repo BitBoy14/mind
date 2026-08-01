@@ -10,18 +10,30 @@ from bson import ObjectId
 from . import brain, config, db, jarvis_link, memory, prompts
 
 
+# Payload-felter som BÆRER innholdet fra en agentleveranse. De rendres som
+# egne blokker i full lengde: den generelle str(payload)[:300]-forkortelsen
+# kuttet agentsvaret til ~250 tegn, så konklusjonen aldri nådde hovedhjernen.
+FULL_PAYLOAD_FIELDS = ("resultat", "leveranse_utdrag")
+
+
 def _render_events(events):
     if not events:
         return "(ingen nye hendelser)"
     lines = []
     for e in events:
         ts = datetime.datetime.fromtimestamp(e["ts"]).strftime("%H:%M:%S")
+        p = dict(e.get("payload") or {})
+        # Løft innholdsfeltene UT før forkortelsen av resten.
+        full = [(k, p.pop(k)) for k in FULL_PAYLOAD_FIELDS if p.get(k)]
         payload = ""
-        if e.get("payload"):
-            p = str(e["payload"])
-            payload = " | " + (p[:300] + "…" if len(p) > 300 else p)
+        if p:
+            s = str(p)
+            payload = " | " + (s[:300] + "…" if len(s) > 300 else s)
         lines.append(f"- [{ts}] ({e['type']}, prio {e.get('priority', 3)}) "
                      f"{e.get('text', '')}{payload}")
+        for k, v in full:
+            lines.append(f"    {k.upper()}:")
+            lines.extend("      " + ln for ln in str(v).splitlines())
     return "\n".join(lines)
 
 

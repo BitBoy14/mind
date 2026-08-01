@@ -10,6 +10,7 @@ slutt-status skrives. Se procctl.py.
 """
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -26,6 +27,19 @@ SKIP_DIRS = {"venv", "node_modules", ".git", "__pycache__"}
 MAX_DETAIL_CHARS = 500_000
 
 AGENT_TIMEOUT_S = 3600
+
+# Hvor mye av agentsvaret som følger med agent_done-hendelsen. Hele svaret
+# ligger alltid i detaljminnet, men hovedhjernen leser hendelsen FØRST og
+# handlet tidligere på et 250-tegns utdrag – da forsvant konklusjonen.
+RESULTAT_CHARS = 4000
+
+# Peker agenten på en leveransefil med absolutt sti, tar vi med starten av
+# selve filen. Bare tekstlignende filtyper leses, og hemmelighetskataloger
+# hoppes over – utdraget havner både i Mongo og i hovedhjernens prompt.
+LEVERANSE_CHARS = 3000
+LEVERANSE_EXT = (".md", ".txt", ".json", ".csv", ".log", ".yml", ".yaml")
+LEVERANSE_SKIP = ("/.ssh/", "/.aws/", "/.gnupg/", "/.claude/", "/.git/")
+_ABS_PATH_RE = re.compile(r"(?<![\w/])(/(?:[\w.@+-]+/)*[\w.@+-]+\.[A-Za-z0-9]+)")
 
 # Fil agenten selv kan se etter i arbeidskatalogen sin (kooperativt steg før
 # signalene): eksisterer den, er oppdraget avbrutt.
@@ -122,6 +136,43 @@ def _run_api_agent(task, model):
                             expect_json=False, model=model)
 
 
+def _leveranse_utdrag(result):
+    """Finn leveransefilen agenten peker på i svaret, og les starten av den.
+
+    Agenter skriver ofte konklusjonen sin i en fil (typisk /tmp/*.md) og nevner
+    bare stien i svaret. Uten innholdet må hovedhjernen gjette.
+
+    Aldri kritisk: finner vi ingenting lesbart, returnerer vi (None, None).
+    Hendelsesskrivingen skal ikke kunne feile på grunn av en manglende fil.
+    """
+    try:
+        seen = []
+        for m in _ABS_PATH_RE.finditer(result or ""):
+            p = m.group(1)
+            if p not in seen:
+                seen.append(p)
+        for path in seen[:30]:
+            if not path.lower().endswith(LEVERANSE_EXT):
+                continue
+            if any(skip in path for skip in LEVERANSE_SKIP):
+                continue
+            try:
+                if not os.path.isfile(path):
+                    continue
+                with open(path, "r", errors="replace") as f:
+                    text = f.read(LEVERANSE_CHARS + 1)
+            except OSError:
+                continue
+            if not text.strip():
+                continue
+            if len(text) > LEVERANSE_CHARS:
+                text = text[:LEVERANSE_CHARS] + "\n[... avkortet, se filen ...]"
+            return path, text
+    except Exception:
+        pass
+    return None, None
+
+
 def run_task(task):
     tid = task["_id"]
     workdir = _workdir(tid)
@@ -172,10 +223,15 @@ def run_task(task):
                     "\n\n[... avkortet, %d tegn totalt ...]" % len(result))
             detail_id = memory.add_detail(
                 f"Agentresultat: {task['title']} [{tid}]", full, source="agent")
-        payload = {"task_id": str(tid), "resultat": (result or "")[:1500],
+        payload = {"task_id": str(tid),
+                   "resultat": (result or "")[:RESULTAT_CHARS],
                    "filer": files[:30]}
         if detail_id:
             payload["detalj_id"] = str(detail_id)
+        lev_sti, lev_tekst = _leveranse_utdrag(result)
+        if lev_tekst:
+            payload["leveranse_fil"] = lev_sti
+            payload["leveranse_utdrag"] = lev_tekst
         db.log_event("agent_done",
                      f"Agent ferdig: {task['title']}",
                      payload, priority=2)
