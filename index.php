@@ -46,6 +46,9 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
   font-size:11px; font-weight:700; }
 .muted { color:var(--dim); font-size:12px; }
 .tokline { font-size:12px; color:var(--dim); text-align:right; line-height:1.3; }
+/* Tekst som bare er med når det er plass (skrivebord), og motstykket som bare
+   er med når det er trangt (telefon). Se mobilseksjonen nederst. */
+.mobonly { display:none; }
 
 #grid { display:grid; grid-template-columns:1fr 1fr 400px; gap:12px;
   padding:12px 16px; align-items:start; }
@@ -120,13 +123,19 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
   #topbar { position:static; padding:8px 10px; gap:7px; }
   #topbar .logo { font-size:16px; }
   #topbar button { padding:9px 11px; }
-  /* Tannhjulet står støtt alene; teksten koster en hel knapperad. */
-  .btxt { display:none; }
+  /* Ikonene står støtt alene; ordene ved siden av koster en hel knapperad.
+     .nomob er det samme for tekst som ikke sitter i en knapp, og .mobonly er
+     den korte varianten som trer inn i stedet. */
+  .btxt, .nomob { display:none; }
+  .mobonly { display:inline; }
   .spacer { display:none; }
-  /* Token-linjen får sin egen lave tekstrad; de fem knappene pakker seg
-     tett rundt den. Topplinjen blir ~200px på 390px bredde – det er prisen
-     for 44px trykkmål, og den scroller bort siden den ikke er sticky her. */
-  .tokline { flex:1 1 100%; text-align:left; }
+  /* Token-linjen legges NEDERST (order) i stedet for midt imellom knappene.
+     Ellers deler den knapperaden i to og tvinger fram en tredje rad. To
+     knapperader + én tokenrad gir ~145px mot ~200px før – på en 667px skjerm
+     er det en drøy halv panelhøyde spart. Topplinjen er ikke sticky her, så
+     resten scroller uansett bort. */
+  .tokline { flex:1 1 100%; text-align:left; order:99;
+    font-size:11.5px; line-height:1.25; }
 
   /* Trykkvennlige mål: minst 44px høyde på alt som kan trykkes. */
   button { min-height:44px; padding:9px 14px; font-size:14px; }
@@ -308,11 +317,26 @@ function render(id, slice, html){
   document.getElementById(id).innerHTML = html;
 }
 
+// Versjonen av markup/CSS/JS denne fanen faktisk kjører. Sammenlignes mot
+// serverens verdi ved hver poll; se ui_version() i lib.php for hvorfor.
+const UI_VERSION = <?= json_encode(ui_version()) ?>;
+
+function reloadIfStale(serverVersion){
+  if (!serverVersion || serverVersion === UI_VERSION) return false;
+  // Én omlasting per serverversjon. Uten denne sperren ville en fane havnet i
+  // evig omlasting hvis versjonene av en eller annen grunn aldri møtes.
+  if (sessionStorage.getItem('mind_ui_reload') === serverVersion) return false;
+  sessionStorage.setItem('mind_ui_reload', serverVersion);
+  location.reload();
+  return true;
+}
+
 async function poll(){
   try {
     const r = await fetch('api/state.php');
     if (r.status === 401) { location.reload(); return; }
     S = await r.json();
+    if (reloadIfStale(S.ui_version)) return;
     draw();
   } catch(e) { /* nettverksglipp – prøver igjen */ }
 }
@@ -324,13 +348,21 @@ function draw(){
   const alive = st.daemon_alive;
   document.getElementById('pulseinfo').innerHTML =
     `<span class="pulse-dot ${alive?'alive':''}"></span>` +
-    `<span class="muted">${alive ? 'puls ' + ago(st.last_pulse_ts) + ' · rytme ' + st.pulse_interval + 's'
+    `<span class="muted">${alive ? 'puls ' + ago(st.last_pulse_ts) +
+                                   '<span class="nomob"> · rytme ' + st.pulse_interval + 's</span>'
                                  : 'daemon svarer ikke'}</span>`;
   const run = se.running;
   const rb = document.getElementById('runbtn');
-  rb.innerHTML = run ? ICO.pause + ' Pause' : ICO.play + ' Start';
+  // Ordet forsvinner på telefon; pause-/spill-ikonet bærer betydningen alene,
+  // og title gir den samme opplysningen til skjermleser og langtrykk.
+  rb.innerHTML = run ? ICO.pause + ' <span class="btxt">Pause</span>'
+                     : ICO.play + ' <span class="btxt">Start</span>';
+  rb.title = run ? 'Pause' : 'Start';
   rb.className = run ? '' : 'primary';
-  document.getElementById('jarvisbtn').textContent = 'Jarvis: ' + (se.jarvis_link ? 'PÅ' : 'AV');
+  const jb = document.getElementById('jarvisbtn');
+  jb.innerHTML = '<span class="btxt">Jarvis</span><span class="mobonly">J</span>: ' +
+                 (se.jarvis_link ? 'PÅ' : 'AV');
+  jb.title = 'Jarvis-kobling: ' + (se.jarvis_link ? 'på' : 'av');
   const t = S.tokens;
   document.getElementById('tokline').innerHTML =
     `↑ inn ${fmtN(t.input)} · ↓ ut ${fmtN(t.output)}<br>${ICO.bolt} cache ${fmtN(t.cache_read)} lest / ${fmtN(t.cache_creation)} skrevet`;

@@ -66,6 +66,8 @@ $lastPulse = (float)($state['last_pulse_ts'] ?? 0);
 $alive = (microtime(true) - $lastPulse) < 120;
 
 echo json_encode([
+    // Lar en åpen fane oppdage at index.php er rullet ut på nytt (se ui_version()).
+    'ui_version' => ui_version(),
     'settings' => [
         'engine' => $s['engine'] ?? 'claude_code',
         'brain_model' => $s['brain_model'] ?? '',

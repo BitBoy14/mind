@@ -183,5 +183,25 @@ function secret_is_set(string $name): bool {
     return !empty($data[$name . '_enc']);
 }
 
+/**
+ * Fingeravtrykk av selve UI-en.
+ *
+ * index.php inneholder markup, CSS og JS i én fil, så filens innhold ER
+ * versjonen. Dashbordet er en langlivet enside-app: den henter bare data med
+ * fetch og laster aldri dokumentet på nytt. Uten dette merket beholder en fane
+ * som stod åpen under en utrulling gammel CSS og markup i det uendelige – mens
+ * innholdet fortsetter å oppdatere seg, slik at siden ser levende ut og
+ * ingenting røper at layouten er utdatert. state.php sender samme verdi, og
+ * klienten laster siden på nytt når de to avviker.
+ */
+function ui_version(): string {
+    static $v = null;
+    if ($v === null) {
+        $h = @md5_file(__DIR__ . '/index.php');
+        $v = $h === false ? 'ukjent' : substr($h, 0, 12);
+    }
+    return $v;
+}
+
 /** Innloggingspassordet lagres/leses som en vanlig secret (login_password_enc), ikke hardkodet. */
 define('LOGIN_PASSWORD', decrypt_secret(read_secrets()['login_password_enc'] ?? ''));
