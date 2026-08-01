@@ -1,0 +1,5 @@
+pymongo
+anthropic
+requests
+cryptography
+psutil
