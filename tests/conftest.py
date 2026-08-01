@@ -23,8 +23,9 @@ CORE_DIR = os.path.join(REPO_ROOT, "core")
 if CORE_DIR not in sys.path:
     sys.path.insert(0, CORE_DIR)
 
-from mind import db as mind_db            # noqa: E402
-from fakemongo import FakeMongoClient     # noqa: E402
+from mind import db as mind_db                  # noqa: E402
+from mind import knowledge as mind_knowledge    # noqa: E402
+from fakemongo import FakeMongoClient           # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -45,6 +46,41 @@ def no_real_mongo(monkeypatch):
     yield
     mind_db._client = None
     mind_db._jarvis_client = None
+
+
+@pytest.fixture(autouse=True)
+def ingen_kunnskapsmotor(monkeypatch):
+    """Ingen kunnskapsmotor i testene – den svarer «ikke tilgjengelig».
+
+    `memory.select_relevant` spør /opt/mind-knowledge om semantiske scorer.
+    Uten denne sperren ville suiten startet en ekte arbeidsprosess med torch
+    og lest den ekte indeksen: tregt, og avhengig av maskinen den kjører på.
+    Standardsvaret her er nøyaktig det fail-open-tilfellet produksjonskoden
+    må tåle, så resten av suiten fester samtidig tilbakefallsoppførselen.
+    Tester som VIL se den semantiske ruten, overstyrer med `kb_scores`.
+    """
+    monkeypatch.setattr(mind_knowledge, "section_scores",
+                        lambda *a, **kw: None)
+
+
+@pytest.fixture
+def kb_scores(monkeypatch):
+    """Bestem hva kunnskapsmotoren skal svare seksjonsscoringen.
+
+        kb_scores({sid: 0.7}, gulv=0.4)   – treffliste, avkortet under 0,4
+        kb_scores(None)                   – motoren kunne ikke svare
+        kb_scores(feil=RuntimeError(...)) – motoren kaster
+    """
+    def _sett(scores=None, gulv=None, feil=None):
+        def _fake(query, *a, **kw):
+            if feil is not None:
+                raise feil
+            if scores is None:
+                return None
+            return {str(k): v for k, v in scores.items()}, gulv
+        monkeypatch.setattr(mind_knowledge, "section_scores", _fake)
+        return _fake
+    return _sett
 
 
 @pytest.fixture

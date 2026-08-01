@@ -8,13 +8,17 @@
 Ingenting slettes for godt: hierarkiet styrer tilgjengelighet, ikke eksistens.
 All kuratering logges til memory_log.
 """
+import logging
 import re
 import time
 
 from bson import ObjectId
 from pymongo import DESCENDING
 
-from . import config, db
+from . import config, db, knowledge
+
+# `log` er navnet på minneloggen lenger nede – modullogger heter derfor `_log`.
+_log = logging.getLogger("mind.memory")
 
 
 def est_tokens(text):
@@ -79,32 +83,137 @@ def render_sections(sections):
 
 _WORD = re.compile(r"[a-zA-ZæøåÆØÅ0-9]{4,}")
 
+# Kjerneseksjonene er MIND selv: hvem brukeren er, hvem MIND er, hva som
+# pågår. De kan aldri velges bort, uansett hva syklusen handler om.
+CORE_IMPORTANCE = 9
 
-def select_relevant(query_text, budget_tokens=None, always_core=True):
-    """Velg de mest relevante seksjonene for en tekst, innenfor token-budsjett.
-    Enkel nøkkelord-scoring + viktighetsboost; kjerneseksjoner (viktighet >= 9)
-    tas alltid med først."""
-    if budget_tokens is None:
-        budget_tokens = config.WORKSET_TARGET_TOKENS
+# Semantisk seleksjon. Tallene er kalibrert mot ekte målinger på indeksen:
+# en klart urelatert spørring gir 0,03–0,11 på seksjonene, en relevant
+# 0,30–0,56. Gulvet på 0,15 skiller de to uten å være nærgående.
+SEMANTIC_MIN_SCORE = 0.15
+# Tak på antall ikke-kjerne-seksjoner. Bremser først når hovedminnet vokser;
+# poenget er at et budsjett på 25k tokens ikke skal fylles med det nest
+# nærmeste bare fordi det er plass.
+SEMANTIC_TOP_K = 12
+# Seksjoner motoren ikke kjenner, er ikke irrelevante – de er usette
+# (opprettet eller endret etter siste indeksering). Noen få slipper alltid
+# gjennom; ellers ville en fersk seksjon vært usynlig for hjernen helt frem
+# til neste indeksering.
+SEMANTIC_UNSEEN_QUOTA = 3
+
+
+def _tokens_of(s):
+    return s.get("tokens", est_tokens(s.get("content", "")))
+
+
+def _select_keywords(query_text, budget_tokens, always_core):
+    """Nøkkelordrangeringen: delstrengtreff + viktighetsboost.
+
+    Dette er tilbakefallet når kunnskapsmotoren ikke kan svare, og oppførselen
+    er bevisst uendret fra før den semantiske ruten fantes: den tar med alt som
+    får plass i budsjettet, rangert. Den siler i praksis ikke bort noe.
+    """
     words = set(w.lower() for w in _WORD.findall(query_text or ""))
     scored = []
     for s in all_sections():
         hay = ((s.get("title", "") + "\n" + s.get("content", ""))).lower()
         score = sum(1 for w in words if w in hay)
         score += s.get("importance", 5) * 0.5
-        if always_core and s.get("importance", 5) >= 9:
+        if always_core and s.get("importance", 5) >= CORE_IMPORTANCE:
             score += 100
         scored.append((score, s))
     scored.sort(key=lambda t: -t[0])
     chosen, used = [], 0
     for score, s in scored:
-        tk = s.get("tokens", est_tokens(s.get("content", "")))
+        tk = _tokens_of(s)
         if used + tk > budget_tokens and chosen:
             continue
-        if score <= 0.5 and s.get("importance", 5) < 9:
+        if score <= 0.5 and s.get("importance", 5) < CORE_IMPORTANCE:
             continue
         chosen.append(s)
         used += tk
+    return chosen
+
+
+def _select_semantic(query_text, budget_tokens, always_core):
+    """Kjerneseksjonene + de semantisk nærmeste av resten.
+
+    Returnerer None så snart grunnlaget svikter – motoren er kald, svarer
+    ikke, eller kjente ikke igjen én eneste seksjon. Da har vi ikke noe å
+    kutte på, og kalleren skal falle tilbake til nøkkelordrangeringen.
+    Kaster aldri.
+    """
+    try:
+        sections = all_sections()
+        if not sections:
+            return None
+        core = [s for s in sections
+                if always_core and s.get("importance", 5) >= CORE_IMPORTANCE]
+        core_ids = set(str(s["_id"]) for s in core)
+        rest = [s for s in sections if str(s["_id"]) not in core_ids]
+
+        svar = knowledge.section_scores(query_text)
+        if svar is None:
+            return None
+        scores, gulv = svar
+        if not scores:
+            return None     # motoren kjente ikke igjen noen seksjon i det hele tatt
+
+        naere, usette = [], []
+        for pos, s in enumerate(rest):
+            sc = scores.get(str(s["_id"]))
+            if sc is None:
+                # Utenfor trefflisten. Ble listen avkortet under gulvet vårt,
+                # VET vi at seksjonen scorer svakere enn det – da er den
+                # irrelevant. Ellers er den bare ukjent for indeksen.
+                if gulv is not None and gulv <= SEMANTIC_MIN_SCORE:
+                    continue
+                usette.append(s)
+            elif sc >= SEMANTIC_MIN_SCORE:
+                # pos er posisjonen i all_sections (viktighet synkende, så
+                # innsettingsrekkefølge): gjør uavgjort deterministisk.
+                naere.append((-sc, pos, s))
+        naere.sort(key=lambda t: t[:2])
+
+        # Kjernen først og uten å belaste budsjettet – den er ubetinget.
+        chosen = list(core)
+        used = sum(_tokens_of(s) for s in chosen)
+        # `continue`, ikke `break`: én diger seksjon skal ikke stenge døren for
+        # de mindre bak den i rangeringen.
+        for s in ([t[2] for t in naere[:SEMANTIC_TOP_K]]
+                  + usette[:SEMANTIC_UNSEEN_QUOTA]):
+            tk = _tokens_of(s)
+            if used + tk > budget_tokens and chosen:
+                continue
+            chosen.append(s)
+            used += tk
+        return chosen
+    except Exception as e:
+        _log.warning("semantisk seksjonsvalg hoppet over (%s: %s)",
+                     type(e).__name__, e)
+        return None
+
+
+def select_relevant(query_text, budget_tokens=None, always_core=True,
+                    semantic=True):
+    """Velg de mest relevante seksjonene for en tekst, innenfor token-budsjett.
+
+    Kjerneseksjoner (viktighet >= 9) tas alltid med, ubetinget og uten å
+    belaste budsjettet. Resten scores semantisk av kunnskapsmotoren mot
+    syklusens kontekst og kuttes til de nærmeste innenfor budsjettet – det er
+    forskjellen fra før, da alt som fikk plass ble med.
+
+    FAIL-OPEN, absolutt: svarer ikke motoren, eller svarer den noe vi ikke kan
+    bruke, faller valget tilbake til den gamle nøkkelordrangeringen. Ingen
+    syklus skal kunne feile fordi et semantisk oppslag gikk galt.
+    """
+    if budget_tokens is None:
+        budget_tokens = config.WORKSET_TARGET_TOKENS
+    chosen = None
+    if semantic:
+        chosen = _select_semantic(query_text, budget_tokens, always_core)
+    if chosen is None:
+        chosen = _select_keywords(query_text, budget_tokens, always_core)
     ids = [str(s["_id"]) for s in chosen]
     return get_sections(ids)  # markerer bruk
 

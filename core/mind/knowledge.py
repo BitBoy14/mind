@@ -237,6 +237,59 @@ def distill(query, top=TOP_HITS, timeout=TIMEOUT_S, max_chars=MAX_CHARS):
         return ""
 
 
+# ------------------------------------------------------------ seksjonsscoring
+
+# Arbeidsprosessens protokoll tar ikke imot et samlingsfilter: kb_worker kaller
+# alltid `rank(...)` uten `colls`. Eneste vei til en score per minneseksjon er
+# derfor å be om en lang nok treffliste til at seksjonene rekker med blant
+# agentleveransene, som ellers dominerer toppen. Rangeringen dedupliserer per
+# dokument, så taket er antall dokumenter i indeksen – i dag 55. 200 er
+# romslig, og en avkortet liste håndteres eksplisitt under (`gulv`).
+SECTION_FETCH_TOP = 200
+
+# Kortere enn TIMEOUT_S: seksjonsvalget skjer også i responderen, rett foran
+# en ventende bruker. Er motoren opptatt, er det bedre å velge uten den.
+SECTION_TIMEOUT_S = 2.0
+
+
+def section_scores(query, kilde="memory_main", top=SECTION_FETCH_TOP,
+                   timeout=SECTION_TIMEOUT_S):
+    """Semantisk score per dokument i én samling, for `query`.
+
+    Returnerer `(scores, gulv)`:
+
+      scores : {dokument_id: score} for dokumentene fra `kilde` som kom med i
+               trefflisten.
+      gulv   : laveste score i HELE trefflisten dersom listen ble avkortet.
+               Da vet vi at et dokument som mangler, ligger UNDER gulvet.
+               Er listen uttømmende, er gulvet None: et dokument som mangler
+               er da ukjent for indeksen (f.eks. laget etter siste
+               indeksering) – ikke nødvendigvis irrelevant. Forskjellen er
+               vesentlig for kalleren, som ellers ville forvekslet «ny» med
+               «uinteressant».
+
+    Returnerer None når motoren ikke kunne svare. Kaster aldri: et
+    kunnskapsoppslag skal aldri kunne velte det som spør.
+    """
+    try:
+        if not (query or "").strip():
+            return None
+        if not _ensure_worker():
+            return None     # varmes opp – kalleren klarer seg uten
+        hits = _ask(query[:2000], top, timeout)
+        alle = [float(h["score"]) for h in hits
+                if isinstance(h.get("score"), (int, float))]
+        if not alle:
+            return None
+        scores = {h["dokument_id"]: float(h["score"]) for h in hits
+                  if h.get("kilde") == kilde and h.get("dokument_id")
+                  and isinstance(h.get("score"), (int, float))}
+        return scores, (min(alle) if len(hits) >= top else None)
+    except Exception as e:
+        log.warning("seksjonsscoring hoppet over (%s: %s)", type(e).__name__, e)
+        return None
+
+
 def status():
     """Kort statuslinje til feilsøking (dashbord/logg)."""
     return {"varm": _worker_alive(), "starter": _starting,

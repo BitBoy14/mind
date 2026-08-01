@@ -6,6 +6,13 @@ token-budsjettet og bruks-markeringen, ikke bare at det kommer noe tilbake.
 
 Kjører mot ekte `memory.py` og ekte `db.py`; kun lagringen er in-memory.
 
+Dette er TILBAKEFALLSRUTEN. Etter at den semantiske seleksjonen kom til, går
+`select_relevant` først til kunnskapsmotoren; her er den stengt ute av
+`ingen_kunnskapsmotor`-fixturen, slik at nøkkelordruten testes rent. Det er
+samtidig fail-open-garantien: dette er nøyaktig oppførselen syklusen får når
+motoren er kald eller nede. Den semantiske ruten testes i
+`test_memory_semantisk_seleksjon.py`.
+
 Scoringsformelen som festes her:
     score = antall unike spørreord (>= 4 tegn) som forekommer som DELSTRENG
             i «tittel\\ninnhold» (små bokstaver)
