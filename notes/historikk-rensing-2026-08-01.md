@@ -105,3 +105,28 @@ GitHub). Passordbytte var allerede initiert i et parallelt oppdrag
 (`notes/impl-passordrotasjon-2026-08-01.md`, ikke committet ennå da dette
 oppdraget ble utført) — anbefaler å fullføre og committe den rotasjonen
 uavhengig av denne rensingen.
+
+## Oppfølging (commit `591f637`)
+
+To gjenstående usporede filer i arbeidstreet inneholdt fortsatt det gamle
+passordet i klartekst da denne saken ble sjekket på nytt: `notes/impl-
+passordrotasjon-2026-08-01.md` (flere forekomster) og `notes/verif-
+agentverktoy-2026-08-01.md` (ingen forekomst, ren). Disse ble aldri committet
+eller pushet før nå, så eksponeringen var kun lokal (arbeidstreet), ikke i
+git-historikken eller på GitHub.
+
+Verdien i `impl-passordrotasjon-2026-08-01.md` er erstattet med
+`FJERNET – passord rotert 2026-08-01` og filene er committet
+(`591f637`, "Sanitize: fjern utdatert hemmelighet fra notater") og pushet.
+
+Etter dette: fullstendig `grep -rn` av arbeidstreet (inkl. `notes/`) for den
+gamle verdien gir 0 treff, `git rev-list --all | xargs git grep` for samme
+verdi over hele historikken gir 0 treff, og et generelt mønsterbasert skann
+(privatnøkler, DB-connection-strings, AWS/GitHub/Slack/OpenAI-nøkkelformater)
+over hele historikken gir ingen ekte treff (kun falske positiver i
+`setup-github-remote-2026-08-01.md`, som siterer selve skann-mønstrene som
+tekst). `gitleaks` var ikke installert og ble ikke installert for dette
+tilleggsskannet, siden de mønsterbaserte søkene dekket samme overflate.
+Full backup (`/var/backups/mind-repo-pre-filterrepo-2026-08-01.tar.gz`)
+uavhengig verifisert lesbar (5824 oppføringer, 212 objekter under `.git/`,
+inkluderer `lib.php`).
