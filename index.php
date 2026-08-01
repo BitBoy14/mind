@@ -154,9 +154,12 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
   .panel h2 { padding:10px 12px; }
   .panel .body { max-height:340px; padding:10px 12px; }
 
-  /* Sekundærtekst var 10–12px – lesbar uten å måtte zoome. */
+  /* Sekundærtekst var 10–12px – lesbar uten å måtte zoome. Ingenting under
+     12px: det er terskelen der en arm-lengde unna blir gjetting. */
   .muted, .ts { font-size:12.5px; }
-  .kindtag { font-size:11px; padding:1px 6px; }
+  .kindtag { font-size:12px; padding:1px 6px; }
+  /* avsendernavnet over hver chatboble lå på 10px */
+  .msg .who { font-size:12px; margin-bottom:3px; }
   /* «Kommentér» og «detaljer/filer» er inline-lenker; gi dem tommelhøyde. */
   .item span.clicky { display:inline-block; padding:9px 2px; }
 
@@ -182,6 +185,24 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
   pre.doc { font-size:13px; max-height:50dvh; }
 
   #login { margin:9vh auto; padding:0 18px; max-width:100%; }
+}
+
+/* Berøringsskjermer BREDERE enn 640px falt mellom stolene: nettbrett i
+   portrett, store telefoner i landskap, og telefoner der brukeren har slått på
+   «Be om skrivebordsversjon» (da blåses layoutbredden opp til ~980px). De fikk
+   skrivebordets 27px-knapper og 13px-skrift på en skjerm som betjenes med
+   tommelen. pointer:coarse treffer kun berøring – en mus matcher aldri, så
+   skrivebordet er uberørt. */
+@media (min-width:641px) and (max-width:1000px) and (pointer:coarse){
+  #grid { grid-template-columns:1fr; }
+  #chatpanel { order:-1; grid-column:auto; }
+  button { min-height:44px; padding:9px 14px; font-size:14px; }
+  input:not([type=radio]):not([type=checkbox]), select, textarea {
+    min-height:44px; padding:9px 11px; font-size:16px; }
+  .item span.clicky { display:inline-block; padding:9px 2px; }
+  .muted, .ts { font-size:12.5px; }
+  .kindtag { font-size:12px; padding:1px 6px; }
+  .msg .who { font-size:12px; margin-bottom:3px; }
 }
 
 /* Telefon i LANDSKAP faller utenfor regelen over (bredden blir 700–950px),
