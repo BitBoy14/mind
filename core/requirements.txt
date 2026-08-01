@@ -3,3 +3,4 @@ anthropic
 requests
 cryptography
 psutil
+pytest

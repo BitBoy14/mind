@@ -250,10 +250,22 @@ def add_detail(title, content, source="agent", section_id=None):
     return _new_detail(title, content, source, section_id)
 
 
+def _ingen_seksjon(name, sid):
+    """Kvittering når en op peker på en seksjon som ikke finnes (arkivert
+    eller oppdiktet id). Hjernen skal aldri tro at noe ble skrevet."""
+    return f"fant ikke seksjon [{sid}] – {name} gjorde ingenting"
+
+
 def apply_ops(ops, actor="brain"):
     """Utfør en liste minne_ops fra hovedhjernen. Returnerer klartekst-sammendrag."""
     done = []
     for op in ops or []:
+        # Hjernen kan svare med en liste strenger i stedet for objekter. Da
+        # skal den enkelte op-en avvises – ikke resten av lista.
+        if not isinstance(op, dict):
+            done.append(f"minne-op feilet (ikke et objekt): {op!r}")
+            log("feil", f"minne-op er ikke et objekt: {op!r}", actor)
+            continue
         try:
             name = op.get("op", "")
             if name == "opprett_seksjon":
@@ -266,12 +278,15 @@ def apply_ops(ops, actor="brain"):
             elif name == "oppdater_seksjon":
                 oid = ObjectId(str(op["id"]))
                 content = op.get("innhold", "")
-                db.db().memory_main.update_one(
+                r = db.db().memory_main.update_one(
                     {"_id": oid},
                     {"$set": {"content": content, "tokens": est_tokens(content),
                               "last_used_ts": time.time()}})
-                log("oppdater_seksjon", str(op["id"]), actor)
-                done.append(f"oppdaterte seksjon [{op['id']}]")
+                if r.matched_count:
+                    log("oppdater_seksjon", str(op["id"]), actor)
+                    done.append(f"oppdaterte seksjon [{op['id']}]")
+                else:
+                    done.append(_ingen_seksjon(name, op["id"]))
 
             elif name == "tilfoy_seksjon":
                 oid = ObjectId(str(op["id"]))
@@ -286,13 +301,18 @@ def apply_ops(ops, actor="brain"):
                                   "last_used_ts": time.time()}})
                     log("tilfoy_seksjon", str(op["id"]), actor)
                     done.append(f"tilføyde til seksjon [{op['id']}]")
+                else:
+                    done.append(_ingen_seksjon(name, op["id"]))
 
             elif name == "sett_viktighet":
                 oid = ObjectId(str(op["id"]))
                 v = max(1, min(10, int(op.get("viktighet", 5))))
-                db.db().memory_main.update_one({"_id": oid},
-                                               {"$set": {"importance": v}})
-                done.append(f"satte viktighet {v} på [{op['id']}]")
+                r = db.db().memory_main.update_one({"_id": oid},
+                                                   {"$set": {"importance": v}})
+                if r.matched_count:
+                    done.append(f"satte viktighet {v} på [{op['id']}]")
+                else:
+                    done.append(_ingen_seksjon(name, op["id"]))
 
             elif name == "opprett_detalj":
                 did = _new_detail(op.get("tittel", "Detalj"),
@@ -327,6 +347,8 @@ def apply_ops(ops, actor="brain"):
                                                est_tokens(content)), actor)
                     done.append(f"komprimerte seksjon '{s.get('title')}' "
                                 f"(fullversjon i detalj [{did}])")
+                else:
+                    done.append(_ingen_seksjon(name, op["id"]))
 
             elif name == "arkiver_seksjon":
                 oid = ObjectId(str(op["id"]))
@@ -344,6 +366,8 @@ def apply_ops(ops, actor="brain"):
                                      pointers=["arkiv:" + str(r.inserted_id)])
                     log("arkiver_seksjon", s.get("title", ""), actor)
                     done.append(f"arkiverte seksjon '{s.get('title')}'")
+                else:
+                    done.append(_ingen_seksjon(name, op["id"]))
 
             else:
                 done.append(f"ukjent minne-op: {name}")

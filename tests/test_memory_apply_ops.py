@@ -302,17 +302,12 @@ def test_actor_folger_med_i_logg_og_detaljkilde(fake_db, section_factory):
     assert fake_db.memory_details.docs[0]["source"] == "nattkurator"
 
 
-# ------------------------------------------------------------------ bekreftede bugs
+# ------------------------------------------------------------------ fiksede bugs
 #
-# Testene under beskriver ØNSKET oppførsel og er merket xfail fordi koden i
-# dag gjør noe annet. De skal IKKE tilpasses koden – de skal bli grønne den
-# dagen buggen fikses (xfail_strict=true fanger det opp).
+# Testene under beskrev bugs som var bekreftet i produksjonskoden. De var
+# merket xfail til buggene ble fikset; nå er de vanlige regresjonstester og
+# skal holde oppførselen på plass.
 
-@pytest.mark.kjent_bug
-@pytest.mark.xfail(raises=AttributeError,
-                   reason="BUG: except-blokken kaller selv op.get() og kaster på nytt "
-                          "når op ikke er en dict. Hele ops-lista avbrytes, og "
-                          "unntaket forplanter seg opp i cycle._apply_result.")
 def test_op_som_ikke_er_dict_skal_rapporteres_ikke_velte_runden(fake_db):
     """En LLM som svarer `"minne_ops": ["opprett_seksjon"]` (liste av strenger
     i stedet for objekter) tar ned hele minneskrivingen for den syklusen –
@@ -323,10 +318,6 @@ def test_op_som_ikke_er_dict_skal_rapporteres_ikke_velte_runden(fake_db):
     assert [d["title"] for d in fake_db.memory_main.docs] == ["Gyldig"]
 
 
-@pytest.mark.kjent_bug
-@pytest.mark.xfail(reason="BUG: oppdater_seksjon og sett_viktighet sjekker aldri at "
-                          "seksjonen finnes, og kvitterer «oppdaterte seksjon» selv "
-                          "når update_one traff null dokumenter.")
 def test_oppdatering_av_ikke_eksisterende_seksjon_skal_ikke_kvittere_suksess(fake_db):
     """Hjernen oppgir en id som er arkivert eller hallusinert. Kvitteringen
     sier at oppdateringen gikk gjennom; ingenting ble skrevet. Neste syklus
@@ -341,10 +332,6 @@ def test_oppdatering_av_ikke_eksisterende_seksjon_skal_ikke_kvittere_suksess(fak
     assert not any(k.startswith("satte viktighet") for k in kvittering)
 
 
-@pytest.mark.kjent_bug
-@pytest.mark.xfail(reason="BUG: tilfoy_seksjon, komprimer_seksjon og arkiver_seksjon "
-                          "returnerer INGEN kvittering når `if s:` slår til – hjernen "
-                          "får ingen beskjed om at operasjonen ikke skjedde.")
 def test_ops_mot_ikke_eksisterende_seksjon_skal_gi_tilbakemelding(fake_db):
     """Motsatt feil av testen over: her er kvitteringen taus i stedet for
     løgnaktig. Begge deler bryter samme kontrakt – hjernen skal kunne stole

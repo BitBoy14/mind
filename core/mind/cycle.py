@@ -157,6 +157,7 @@ def _apply_result(res, kind):
     """Effektuer hovedhjernens beslutninger. Returnerer beslutningssammendrag."""
     decisions = []
 
+    lagrede_tanker = 0
     for t in res.get("tanker") or []:
         txt = t.get("tekst", "") if isinstance(t, dict) else str(t)
         knd = t.get("type", "tanke") if isinstance(t, dict) else "tanke"
@@ -169,8 +170,11 @@ def _apply_result(res, kind):
             if jarvis_link.add_idea(title.strip(), hyp.strip() or title.strip()):
                 decisions.append(f"la idé i Jarvis-køen: {title.strip()}")
         db.add_thought(txt, knd)
-    if res.get("tanker"):
-        decisions.append(f"{len(res['tanker'])} tanker logget")
+        lagrede_tanker += 1
+    if lagrede_tanker:
+        # Tell det som faktisk ble lagret – tomme tanker hoppes over, og
+        # sammendraget går rett inn i neste syklus' kontekst.
+        decisions.append(f"{lagrede_tanker} tanker logget")
 
     msg = (res.get("chat_melding") or "").strip()
     if msg and msg.lower() != "null":
@@ -181,10 +185,15 @@ def _apply_result(res, kind):
     decisions.extend(ops_done)
 
     for a in res.get("agent_oppgaver") or []:
+        try:
+            prioritet = int(a.get("prioritet", 3))
+        except (TypeError, ValueError):
+            # «prioritet: høy» skal koste prioriteten, ikke hele effektueringen
+            prioritet = 3
         t = db.create_agent_task(a.get("tittel", "Uten tittel"),
                                  a.get("oppdrag", ""),
                                  a.get("type", "bygg"),
-                                 int(a.get("prioritet", 3)))
+                                 prioritet)
         decisions.append(f"opprettet agentoppgave '{t['title']}'")
 
     for tid in res.get("avbryt_oppgaver") or []:

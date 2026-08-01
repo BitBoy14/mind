@@ -317,15 +317,13 @@ def test_kind_paavirker_ikke_effektueringen(fake_db):
     assert len(fake_db.thoughts.docs) == 4
 
 
-# ------------------------------------------------------------------ bekreftede bugs
+# ------------------------------------------------------------------ fiksede bugs
+#
+# Var xfail til buggene ble fikset – nå vanlige regresjonstester.
 
-@pytest.mark.kjent_bug
-@pytest.mark.xfail(reason="BUG: beslutningen teller len(res['tanker']) i stedet for "
-                          "antall tanker som faktisk ble lagret. Tomme tanker "
-                          "hoppes over, men telles med.")
 def test_antall_loggede_tanker_skal_stemme_med_det_som_ble_lagret(fake_db):
-    """Sammendraget går inn i syklusloggen og i neste syklus' kontekst.
-    Her sier det «4 tanker logget» når to av dem ble kastet."""
+    """Sammendraget går inn i syklusloggen og i neste syklus' kontekst. Det
+    skal telle det som faktisk ble lagret, ikke det modellen sendte inn."""
     beslutninger = cycle._apply_result(
         {"tanker": [{"tekst": "ekte"}, {"tekst": ""}, "også ekte", {"tekst": None}]},
         "normal")
@@ -333,17 +331,9 @@ def test_antall_loggede_tanker_skal_stemme_med_det_som_ble_lagret(fake_db):
     assert beslutninger == ["2 tanker logget"]
 
 
-@pytest.mark.kjent_bug
-@pytest.mark.xfail(raises=ValueError,
-                   reason="BUG: int(a.get('prioritet', 3)) er ubeskyttet. En ikke-"
-                          "numerisk prioritet avbryter HELE _apply_result, så "
-                          "admin-forslag, arbeidsnotat og stagnasjonsflagg "
-                          "aldri effektueres – og run_cycle markerer aldri "
-                          "hendelsene som behandlet.")
 def test_ugyldig_prioritet_skal_ikke_avbryte_resten_av_resultatet(fake_db):
-    """Alt annet i `_apply_result` tåler rar LLM-input; nettopp denne
-    konverteringen gjør det ikke. En modell som skriver «prioritet: høy»
-    tar ned hele effektueringen."""
+    """Alt annet i `_apply_result` tåler rar LLM-input. En modell som skriver
+    «prioritet: høy» skal ikke ta ned hele effektueringen."""
     cycle._apply_result({
         "agent_oppgaver": [{"tittel": "T", "prioritet": "høy"}],
         "admin_forslag": [{"tittel": "Skal fortsatt registreres"}],
