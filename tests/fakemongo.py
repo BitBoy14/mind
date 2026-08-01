@@ -30,7 +30,7 @@ ASCENDING = 1
 DESCENDING = -1
 
 _QUERY_OPS = ("$in", "$nin", "$ne", "$exists", "$gt", "$gte", "$lt", "$lte")
-_UPDATE_OPS = ("$set", "$inc", "$push", "$unset", "$setOnInsert")
+_UPDATE_OPS = ("$set", "$inc", "$push", "$pull", "$unset", "$setOnInsert")
 
 
 # ------------------------------------------------------------------ matching
@@ -273,6 +273,17 @@ def _apply_update(doc, update, upsert=False):
         elif op == "$push":
             for k, v in changes.items():
                 doc.setdefault(k, []).append(copy.deepcopy(v))
+        elif op == "$pull":
+            # Kun likhetsformen ($pull: {felt: verdi}) – den MIND bruker.
+            # Et betingelsesuttrykk ville krevd hele matcheren og skal
+            # heller feile høylytt enn å fjerne feil element.
+            for k, v in changes.items():
+                if _is_op_expr(v):
+                    raise NotImplementedError(
+                        "fakemongo: $pull med betingelse mangler")
+                cur = doc.get(k)
+                if isinstance(cur, list):
+                    doc[k] = [x for x in cur if x != v]
         elif op == "$unset":
             for k in changes:
                 doc.pop(k, None)

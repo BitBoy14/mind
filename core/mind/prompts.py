@@ -54,7 +54,8 @@ kan utelates eller settes til null/tom liste):
     {"op": "sett_viktighet", "id": "...", "viktighet": 4},
     {"op": "opprett_detalj", "tittel": "...", "innhold": "...", "seksjon_id": "..."},
     {"op": "komprimer_seksjon", "id": "...", "nytt_innhold": "komprimert essens"},
-    {"op": "arkiver_seksjon", "id": "...", "en_linje": "valgfri én linje som blir igjen i hovedminnet, eller null"}
+    {"op": "arkiver_seksjon", "id": "...", "en_linje": "valgfri én linje som blir igjen i hovedminnet, eller null"},
+    {"op": "arkiver_detalj", "id": "detaljminne-id"}
   ],
   "agent_oppgaver": [{"tittel": "...", "oppdrag": "presist og selvstendig oppdrag med all kontekst agenten trenger", "type": "bygg|undersok|skriv|analyser", "prioritet": 2}],
   "avbryt_oppgaver": ["task_id"],
@@ -69,6 +70,11 @@ Viktige presiseringer:
   innholdet erstattes – du mister ingenting.
 - "arkiver_seksjon": seksjonen flyttes til Arkivet; "en_linje" + peker kan bli
   igjen i hovedminnet.
+- "arkiver_detalj": et DETALJMINNE flyttes til Arkivet og tas samtidig ut av
+  det semantiske søket. Bruk den på detaljer som er utdaterte eller uttrykkelig
+  erstattet av en nyere versjon – en foreldet tekst som fortsatt er søkbar gir
+  gale svar, ikke bare bortkastet plass. Id-en får du fra kunnskapsoppslaget
+  ("memory_details:<id>") eller fra pekerne på en seksjon. Ingenting slettes.
 - Agentoppdrag skal være selvstendige: agenten har IKKE ditt minne. Gi den alt
   den trenger i oppdragsteksten, inkludert filstier og krav til leveransen.
 - Sett "stagnasjon": true hvis du ser at syklusene går uten reell fremdrift.

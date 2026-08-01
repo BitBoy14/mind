@@ -34,6 +34,12 @@ SKIP_DIRS = {"venv", "node_modules", ".git", "__pycache__", RUNDIR}
 # BSON-dokumentgrensen er 16 MB; hold detaljminnet trygt godt under det.
 MAX_DETAIL_CHARS = 500_000
 
+# Hvor mye av agentsvaret som lagres på selve oppgaven. Halen beholdes, ikke
+# hodet: konklusjonen står til slutt. Dette er teksten kunnskapsmotoren
+# indekserer fra agent_tasks, og altså målestokken for om detaljminnet er en
+# ren kopi (se memory.duplicates_task_result).
+RESULT_STORE_CHARS = 8000
+
 AGENT_TIMEOUT_S = 3600
 
 # Hvor ofte vi ser etter om en agent som overlevde en daemon-restart er ferdig.
@@ -224,9 +230,10 @@ def _deliver(task, result, files):
     agent som ble ferdig mens daemonen var nede (se _attach_orphan).
     """
     tid = task["_id"]
+    lagret_result = (result or "")[-RESULT_STORE_CHARS:]
     if db.update_task_if_active(tid, {
             "status": "done", "finished_ts": time.time(),
-            "result": (result or "")[-8000:], "files": files,
+            "result": lagret_result, "files": files,
             "progress": ""}) == 0:
         # Oppgaven var flagget avbrutt, men arbeidet ble fullført likevel.
         # Nettopp dette skjedde med b065 og b12f – det skal stå svart på
@@ -239,8 +246,16 @@ def _deliver(task, result, files):
         if len(full) > MAX_DETAIL_CHARS:
             full = full[:MAX_DETAIL_CHARS] + (
                 "\n\n[... avkortet, %d tegn totalt ...]" % len(result))
+        # Detaljminnet er hjernens eget nivå og beholdes. Men når teksten er
+        # ordrett den samme som den vi nettopp lagret på oppgaven, skal den
+        # ikke embeddes en gang til: da lå samme kunnskap indeksert under to
+        # etiketter, og ett søk kunne returnere begge som separate «treff».
+        # Er svaret så langt at detaljen bærer mer enn oppgaven (result er
+        # avkortet), indekseres den som før – ellers ble begynnelsen usøkbar.
         detail_id = memory.add_detail(
-            f"Agentresultat: {task['title']} [{tid}]", full, source="agent")
+            f"Agentresultat: {task['title']} [{tid}]", full, source="agent",
+            kb_index=not memory.duplicates_task_result(full, lagret_result),
+            ref=f"agent_tasks:{tid}")
     payload = {"task_id": str(tid),
                "resultat": (result or "")[:RESULTAT_CHARS],
                "filer": files[:30]}

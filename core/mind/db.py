@@ -18,6 +18,7 @@ etter restart uten tap (§2). Samlinger:
 """
 import time
 
+from bson import ObjectId
 from pymongo import MongoClient, ASCENDING, DESCENDING, ReturnDocument
 
 from . import config
@@ -54,8 +55,37 @@ def ensure_indexes():
     d.tokens.create_index([("ts", DESCENDING)])
     d.agent_tasks.create_index([("status", ASCENDING), ("created_ts", ASCENDING)])
     d.memory_details.create_index([("created_ts", DESCENDING)])
+    d.memory_details.create_index([("use_count", ASCENDING),
+                                   ("last_used_ts", ASCENDING)])
     d.memory_archive.create_index([("archived_ts", DESCENDING)])
     d.cycles.create_index([("ts", DESCENDING)])
+
+
+# ------------------------------------------------------------- detaljminner
+
+def mark_details_used(ids):
+    """Tell bruk på detaljminnene som faktisk ble lest ut til noen.
+
+    Detaljminner nås ALDRI via memory.get_sections – de hentes av
+    kunnskapsmotorens destillat (inn i syklusprompten) og av dashbordets
+    utforsker. Uten denne tellingen er «aldri hentet opp» ikke et lavt tall,
+    men et manglende felt, og kuratering av detaljnivået må gjettes på alder.
+
+    Ugyldige id-er hoppes over i stillhet: dette er sporing, og en sporing
+    skal aldri kunne velte det den sporer. Returnerer antall treff.
+    """
+    oids = []
+    for i in ids or []:
+        try:
+            oids.append(ObjectId(str(i)))
+        except Exception:
+            continue
+    if not oids:
+        return 0
+    r = db().memory_details.update_many(
+        {"_id": {"$in": oids}},
+        {"$set": {"last_used_ts": time.time()}, "$inc": {"use_count": 1}})
+    return r.matched_count
 
 
 # ------------------------------------------------------------------ settings

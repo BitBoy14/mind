@@ -74,7 +74,15 @@ def test_ukjent_filteroperator_kaster(col):
 def test_ukjent_oppdateringsoperator_kaster(col):
     col.insert_one({"_id": 1})
     with pytest.raises(NotImplementedError):
-        col.update_one({"_id": 1}, {"$pull": {"a": 1}})
+        col.update_one({"_id": 1}, {"$addToSet": {"a": 1}})
+
+
+def test_pull_med_betingelse_kaster(col):
+    """Betingelsesformen ville krevd hele matcheren. Å gjette på den kunne
+    fjernet feil element – da er det bedre å feile høylytt."""
+    col.insert_one({"_id": 1, "liste": [1, 2, 3]})
+    with pytest.raises(NotImplementedError):
+        col.update_one({"_id": 1}, {"$pull": {"liste": {"$gt": 1}}})
 
 
 # ------------------------------------------------------------------ oppdatering
@@ -98,6 +106,19 @@ def test_push_paa_manglende_felt_lager_lista(col):
     col.insert_one({"_id": 1})
     col.update_one({"_id": 1}, {"$push": {"pointers": "x"}})
     assert col.find_one({"_id": 1})["pointers"] == ["x"]
+
+
+def test_pull_fjerner_alle_forekomster(col):
+    col.insert_one({"_id": 1, "pointers": ["a", "b", "a"]})
+    col.update_one({"_id": 1}, {"$pull": {"pointers": "a"}})
+    assert col.find_one({"_id": 1})["pointers"] == ["b"]
+
+
+def test_pull_paa_manglende_eller_ikke_liste_er_uskadelig(col):
+    col.insert_one({"_id": 1, "tekst": "ikke en liste"})
+    col.update_one({"_id": 1}, {"$pull": {"pointers": "a"}})
+    col.update_one({"_id": 1}, {"$pull": {"tekst": "a"}})
+    assert col.find_one({"_id": 1}) == {"_id": 1, "tekst": "ikke en liste"}
 
 
 def test_update_one_treffer_bare_forste(col):

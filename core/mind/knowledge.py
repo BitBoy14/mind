@@ -30,6 +30,8 @@ import subprocess
 import threading
 import time
 
+from . import db
+
 log = logging.getLogger("mind.knowledge")
 
 KB_DIR = "/opt/mind-knowledge"
@@ -210,7 +212,12 @@ def _ask(query, top, timeout, colls=None):
 
 
 def _format(hits, max_chars=MAX_CHARS):
-    lines = []
+    """Destillatet, og trefflisten som FAKTISK kom med i det.
+
+    De to skilles fordi tegnbudsjettet kutter halen av trefflisten: et treff
+    som ble kuttet bort, ble aldri lest av noen og skal ikke telle som brukt.
+    """
+    lines, brukte = [], []
     used = 0
     for h in hits:
         blokk = ("- %s (%s%s, score %s)\n  id: %s\n  %s"
@@ -221,8 +228,27 @@ def _format(hits, max_chars=MAX_CHARS):
         if used + len(blokk) > max_chars:
             break
         lines.append(blokk)
+        brukte.append(h)
         used += len(blokk) + 1
-    return "\n".join(lines)
+    return "\n".join(lines), brukte
+
+
+def _tell_bruk(hits):
+    """Bruksteller på detaljminnene i destillatet.
+
+    Dette er den ene kodestien der hovedhjernen faktisk får se et
+    detaljminne – seksjonsvalget rører bare memory_main. Fail-open som alt
+    annet her: en teller som ikke lot seg skrive, skal ikke koste syklusen
+    kunnskapen den nettopp hentet.
+    """
+    try:
+        ids = [h.get("dokument_id") for h in hits
+               if h.get("kilde") == "memory_details" and h.get("dokument_id")]
+        if ids:
+            db.mark_details_used(ids)
+    except Exception as e:
+        log.warning("brukstelling av detaljminner hoppet over (%s: %s)",
+                    type(e).__name__, e)
 
 
 def distill(query, top=TOP_HITS, timeout=TIMEOUT_S, max_chars=MAX_CHARS):
@@ -237,7 +263,9 @@ def distill(query, top=TOP_HITS, timeout=TIMEOUT_S, max_chars=MAX_CHARS):
         if not _ensure_worker():
             return ""     # varmes opp – neste syklus får svar
         hits = _ask(query[:2000], top, timeout)
-        return _format(hits, max_chars)
+        txt, brukte = _format(hits, max_chars)
+        _tell_bruk(brukte)
+        return txt
     except Exception as e:
         log.warning("kunnskapsoppslag hoppet over (%s: %s)", type(e).__name__, e)
         return ""

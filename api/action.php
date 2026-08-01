@@ -159,6 +159,17 @@ case 'memdoc':
     if (!$col) fail('ugyldig samling');
     $doc = mfindone($col, ['_id' => oid((string)($in['id'] ?? ''))]);
     if (!$doc) fail('ikke funnet', 404);
+    // Brukssporing på detaljminner: dette og kunnskapsmotorens destillat er de
+    // to stedene et detaljminne faktisk BLIR lest. Uten tellingen er «aldri
+    // hentet opp» ikke et lavt tall, men et manglende felt. Hovedminnet telles
+    // ikke her - der er use_count hjernens eget signal, som en titt i
+    // dashbordet ikke skal forurense.
+    if ($col === 'memory_details') {
+        mupdate($col, ['_id' => oid((string)$in['id'])], [
+            '$inc' => ['use_count' => 1],
+            '$set' => ['last_used_ts' => microtime(true)],
+        ]);
+    }
     ok(['doc' => $doc]);
 
 case 'memlist':

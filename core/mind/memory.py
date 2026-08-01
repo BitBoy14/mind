@@ -236,24 +236,156 @@ def _new_section(title, content, importance=5, pointers=None):
     return r.inserted_id
 
 
-def _new_detail(title, content, source="brain", section_id=None):
+def _new_detail(title, content, source="brain", section_id=None,
+                kb_index=True, ref=None):
+    """Opprett et detaljminne.
+
+    `use_count`/`last_used_ts` settes fra første stund. Uten dem er «aldri
+    hentet opp» ikke et lavt tall, men et manglende felt – og da er sjelden
+    brukt detaljminne ikke målbart i det hele tatt. `last_used_ts` er None,
+    ikke nå: et dokument som nettopp ble skrevet, er ikke brukt.
+
+    `kb_index=False` merker dokumentet som ikke-indekserbart for
+    kunnskapsmotoren (se KB_INDEX_FILTER). Feltet skrives KUN når det er
+    False, slik at «mangler feltet» fortsatt betyr «indekseres», og
+    eksisterende dokumenter beholder sin oppførsel.
+    """
     doc = {"title": title, "content": content, "tokens": est_tokens(content),
            "created_ts": time.time(), "source": source,
-           "section_id": str(section_id) if section_id else None}
+           "section_id": str(section_id) if section_id else None,
+           "use_count": 0, "last_used_ts": None}
+    if not kb_index:
+        doc["kb_index"] = False
+    if ref:
+        doc["ref"] = ref
     r = db.db().memory_details.insert_one(doc)
     return r.inserted_id
 
 
-def add_detail(title, content, source="agent", section_id=None):
+def add_detail(title, content, source="agent", section_id=None,
+               kb_index=True, ref=None):
     """Offentlig inngang for å opprette et detaljminne utenfor minne_ops,
     f.eks. fra agent-rammeverket når en oppgave fullføres."""
-    return _new_detail(title, content, source, section_id)
+    return _new_detail(title, content, source, section_id, kb_index, ref)
+
+
+# ------------------------------------------------- dedup mot kunnskapsindeksen
+
+# Filteret kunnskapsmotoren (/opt/mind-knowledge/mind_kb.py: SOURCES) bruker på
+# memory_details og memory_archive. Gjengitt her fordi det er MINDs side av
+# kontrakten: skriver vi kb_index=False, forsvinner dokumentet fra den
+# semantiske indeksen ved neste re-indeksering.
+KB_INDEX_FILTER = {"kb_index": {"$ne": False}}
+
+# Halen add_detail selv kan ha lagt på et avkortet agentsvar. Den er et spor av
+# lagringen, ikke av leveransen, og skal ikke telle som «nytt innhold» når vi
+# avgjør om detaljen er en ren kopi.
+_DETAIL_TRUNC_NOTE = re.compile(r"\n\n\[\.\.\. avkortet, \d+ tegn totalt \.\.\.\]\s*$")
+
+# Agentresultat-titler bærer oppgavens id: «Agentresultat: … [<24 hex>]».
+# Formatet er eneste kobling tilbake for detaljer skrevet før `ref` fantes.
+_TASK_ID_IN_TITLE = re.compile(r"\[([0-9a-fA-F]{24})\]\s*$")
+
+
+def duplicates_task_result(detail_content, task_result):
+    """Sant når detaljteksten allerede ligger ORDRETT i agentoppgavens lagrede
+    `result` – altså når detaljen ikke tilfører kunnskapsindeksen noe
+    agent_tasks ikke allerede har.
+
+    Merk at agent_tasks.result er avkortet til de siste tegnene av et langt
+    agentsvar mens detaljminnet holder hele. Et langt svar er derfor IKKE et
+    duplikat, og skal fortsatt indekseres – ellers ville begynnelsen av svaret
+    blitt usøkbar. Nettopp derfor er innholdsmatch kriteriet, ikke opphavet.
+    """
+    c = _DETAIL_TRUNC_NOTE.sub("", (detail_content or "")).strip()
+    r = (task_result or "").strip()
+    return bool(c) and bool(r) and c in r
+
+
+def _task_id_of(detail):
+    """Agentoppgaven et detaljminne stammer fra: eksplisitt `ref` først,
+    ellers id-en i tittelen. Returnerer None for detaljer uten opphav."""
+    ref = str(detail.get("ref") or "")
+    if ref.startswith("agent_tasks:"):
+        return ref.split(":", 1)[1]
+    m = _TASK_ID_IN_TITLE.search((detail.get("title") or "").strip())
+    return m.group(1) if m else None
+
+
+def flag_agent_duplicates(dry_run=False):
+    """Merk auto-lagrede agentduplikater som ikke-indekserbare.
+
+    Samme kunnskap lå indeksert to ganger – én gang som agent_tasks.result og
+    én gang som detaljminne – slik at ett semantisk søk kunne returnere begge
+    som separate «treff». Her merkes kopien, ikke originalen: agent_tasks
+    forblir den ene indekserte kilden til agentsvar.
+
+    IDEMPOTENT. Dokumenter som allerede er merket telles og hoppes over, og et
+    dokument merkes KUN når teksten faktisk er en ordrett del av det
+    agent_tasks lagrer. Ingenting slettes – dokumentet blir liggende, det blir
+    bare ikke embeddet.
+
+    `dry_run=True` måler uten å skrive. Returnerer en oppsummering.
+    """
+    d = db.db()
+    sum_ = {"undersokt": 0, "flagget": 0, "allerede_flagget": 0,
+            "beholdt_indeksert": 0, "uten_oppgave": 0, "tokens_ut_av_indeks": 0}
+    for doc in d.memory_details.find({}):
+        tid = _task_id_of(doc)
+        if not tid:
+            continue                      # ikke et agentavledet detaljminne
+        sum_["undersokt"] += 1
+        if doc.get("kb_index") is False:
+            sum_["allerede_flagget"] += 1
+            continue
+        try:
+            task = d.agent_tasks.find_one({"_id": ObjectId(tid)}, {"result": 1})
+        except Exception:
+            task = None
+        if task is None:
+            sum_["uten_oppgave"] += 1     # originalen finnes ikke – behold kopien
+            continue
+        if not duplicates_task_result(doc.get("content"), task.get("result")):
+            sum_["beholdt_indeksert"] += 1
+            continue
+        if not dry_run:
+            d.memory_details.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"kb_index": False, "ref": "agent_tasks:%s" % tid}})
+        sum_["flagget"] += 1
+        sum_["tokens_ut_av_indeks"] += (doc.get("tokens")
+                                        or est_tokens(doc.get("content")))
+    if sum_["flagget"] and not dry_run:
+        log("dedup_indeksering",
+            "%d agentduplikater merket kb_index=False (%d tokens ut av "
+            "kunnskapsindeksen)" % (sum_["flagget"], sum_["tokens_ut_av_indeks"]),
+            "system")
+    return sum_
+
+
+def backfill_detail_usage():
+    """Gi detaljminner fra før brukssporingen et ærlig nullpunkt.
+
+    Uten feltet er «aldri brukt» og «ikke målt» umulig å skille. Idempotent:
+    rører kun dokumenter som mangler use_count, og nullstiller derfor aldri en
+    teller som allerede har talt.
+    """
+    r = db.db().memory_details.update_many(
+        {"use_count": {"$exists": False}},
+        {"$set": {"use_count": 0, "last_used_ts": None}})
+    return r.modified_count
 
 
 def _ingen_seksjon(name, sid):
     """Kvittering når en op peker på en seksjon som ikke finnes (arkivert
     eller oppdiktet id). Hjernen skal aldri tro at noe ble skrevet."""
     return f"fant ikke seksjon [{sid}] – {name} gjorde ingenting"
+
+
+def _ingen_detalj(name, did):
+    """Samme kvittering for detaljminner: en op mot en id som ikke finnes
+    skal si det rett ut, ikke gå stille."""
+    return f"fant ikke detaljminne [{did}] – {name} gjorde ingenting"
 
 
 def apply_ops(ops, actor="brain"):
@@ -368,6 +500,42 @@ def apply_ops(ops, actor="brain"):
                     done.append(f"arkiverte seksjon '{s.get('title')}'")
                 else:
                     done.append(_ingen_seksjon(name, op["id"]))
+
+            elif name == "arkiver_detalj":
+                # Samme arkivmekanisme som arkiver_seksjon: dokumentet flyttes
+                # til memory_archive med archived_ts + original_id, og
+                # forsvinner fra nivået det lå på. Forskjellen er kb_index:
+                # en arkivert detalj skal UT av det semantiske søket, ellers
+                # ville arkiveringen bare flyttet treffet til en ny etikett.
+                oid = ObjectId(str(op["id"]))
+                dtl = db.db().memory_details.find_one({"_id": oid})
+                if dtl:
+                    dtl.pop("_id")
+                    dtl["archived_ts"] = time.time()
+                    dtl["original_id"] = str(oid)
+                    dtl["from_collection"] = "memory_details"
+                    dtl["kb_index"] = False
+                    r = db.db().memory_archive.insert_one(dtl)
+                    db.db().memory_details.delete_one({"_id": oid})
+                    # Pekeren i seksjonen skal følge dokumentet, ikke bli
+                    # hengende igjen som en brutt lenke. To skrivinger fordi
+                    # $pull og $push på samme felt kolliderer i én.
+                    sid = dtl.get("section_id")
+                    if sid:
+                        try:
+                            soid = ObjectId(str(sid))
+                            db.db().memory_main.update_one(
+                                {"_id": soid}, {"$pull": {"pointers": str(oid)}})
+                            db.db().memory_main.update_one(
+                                {"_id": soid},
+                                {"$push": {"pointers": "arkiv:" + str(r.inserted_id)}})
+                        except Exception:
+                            pass
+                    log("arkiver_detalj", dtl.get("title", ""), actor)
+                    done.append(f"arkiverte detaljminne '{dtl.get('title')}' "
+                                f"(arkiv [{r.inserted_id}], ute av kunnskapsindeksen)")
+                else:
+                    done.append(_ingen_detalj(name, op["id"]))
 
             else:
                 done.append(f"ukjent minne-op: {name}")
