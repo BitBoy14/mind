@@ -115,6 +115,17 @@ def mark_events_processed(ids):
                                 {"$set": {"processed": True}})
 
 
+def unprocessed_events_of_type(etype, limit=20):
+    """Uprosesserte hendelser av én type, eldste først.
+
+    Brukes av responderen for chat_msg: en brukermelding er «uprosessert»
+    helt til hovedhjernen har lest den i en syklus, og fram til da finnes den
+    ikke i minnet. Responderen må se den likevel.
+    """
+    return list(db().events.find({"processed": False, "type": etype})
+                .sort("ts", ASCENDING).limit(limit))
+
+
 # ------------------------------------------------------------------ tokens
 
 def log_tokens(role, engine, model, usage, purpose, ms):
