@@ -4,3 +4,8 @@ __pycache__/
 logs/
 agentwork/
 data/
+
+# secrets.conf ligger normalt utenfor repoet i /etc/mind/, men ignoreres
+# eksplisitt her som forsvar i dybden mot at en lokal kopi ved et uhell
+# committes.
+secrets.conf

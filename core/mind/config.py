@@ -3,8 +3,13 @@
 Secrets ligger i /etc/mind/ (utenfor web-root). Sudo-passordet leses kun ved
 eksplisitt behov for privilegerte handlinger og skal aldri logges eller vises.
 """
+import fcntl
 import json
+import logging
 import os
+import stat
+
+log = logging.getLogger("mind.config")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # .../mind
 CORE_DIR = os.path.join(BASE_DIR, "core")
@@ -67,6 +72,40 @@ def _read(path):
         return None
 
 
+def _check_secrets_file_perms():
+    """Varsle høylytt hvis secrets.conf har videre tilgang enn tiltenkt.
+
+    Filen deles nødvendigvis av to systembrukere (daemonen kjører som
+    mads, php-fpm som www-data), så 0660 (eier+gruppe) er selve målet
+    – ikke 0600. Vi varsler dersom "andre" har noen tilgang i det hele
+    tatt, eller dersom modus er videre enn 0660 (f.eks. 664/666/777).
+    """
+    try:
+        mode = stat.S_IMODE(os.stat(SECRETS_FILE).st_mode)
+    except OSError:
+        return
+    if (mode & 0o007) != 0 or (mode & ~0o660) != 0:
+        log.warning(
+            "SIKKERHETSVARSEL: %s har modus %o - forventet maks 0660 "
+            "(eier+gruppe, ingen tilgang for andre). Kjor: chmod 660 %s",
+            SECRETS_FILE, mode, SECRETS_FILE,
+        )
+
+
+def _read_secrets_file():
+    """Les secrets.conf med delt lås (unngår å lese filen midt i en skriving)."""
+    _check_secrets_file_perms()
+    try:
+        with open(SECRETS_FILE) as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+            try:
+                return f.read().strip()
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        return None
+
+
 def enc_key_bytes():
     hexkey = _read(ENC_KEY_FILE)
     return bytes.fromhex(hexkey) if hexkey else None
@@ -88,7 +127,7 @@ def decrypt(value_b64):
 
 
 def get_secret(name):
-    raw = _read(SECRETS_FILE)
+    raw = _read_secrets_file()
     if not raw:
         return ""
     try:

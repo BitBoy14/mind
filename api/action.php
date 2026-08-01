@@ -33,7 +33,7 @@ require_auth_api();
 /** Hent modelliste fra Anthropic (via lagret nøkkel); cache i settings. */
 function refresh_models(): array {
     $models = ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
-    $data = json_decode((string)@file_get_contents(SECRETS_FILE), true) ?: [];
+    $data = read_secrets();
     if (!empty($data['anthropic_api_key_enc'])) {
         $key = '';
         $raw = base64_decode($data['anthropic_api_key_enc']);

@@ -114,13 +114,62 @@ function encrypt_secret(string $value): string {
     return base64_encode($iv . $ct);
 }
 
+/**
+ * Varsle høylytt hvis secrets.conf har videre tilgang enn tiltenkt.
+ * Filen deles nødvendigvis av to systembrukere (daemonen kjører som
+ * mads, php-fpm som www-data), så 0660 (eier+gruppe) er selve målet –
+ * ikke 0600. Vi varsler dersom "andre" har noen tilgang i det hele
+ * tatt, eller dersom modus er videre enn 0660 (f.eks. 664/666/777).
+ */
+function check_secrets_file_perms(): void {
+    if (!file_exists(SECRETS_FILE)) return;
+    $mode = fileperms(SECRETS_FILE) & 0777;
+    if (($mode & 0007) !== 0 || ($mode & ~0660) !== 0) {
+        error_log(sprintf(
+            'MIND SIKKERHETSVARSEL: %s har modus %o – forventet maks 0660 (eier+gruppe, ingen tilgang for andre). Kjør: chmod 660 %s',
+            SECRETS_FILE, $mode, SECRETS_FILE
+        ));
+    }
+}
+
+/** Les secrets.conf med delt lås (for å unngå å lese en fil under skriving). */
+function read_secrets(): array {
+    check_secrets_file_perms();
+    $fh = @fopen(SECRETS_FILE, 'c+');
+    if ($fh === false) return [];
+    $data = [];
+    if (flock($fh, LOCK_SH)) {
+        $raw = stream_get_contents($fh);
+        $data = json_decode((string)$raw, true) ?: [];
+        flock($fh, LOCK_UN);
+    }
+    fclose($fh);
+    return $data;
+}
+
+/** Read-modify-write av secrets.conf under eksklusiv lås (unngår tapt skriving ved samtidighet). */
 function save_secret(string $name, string $value): void {
-    $data = json_decode((string)@file_get_contents(SECRETS_FILE), true) ?: [];
+    check_secrets_file_perms();
+    $fh = fopen(SECRETS_FILE, 'c+');
+    if ($fh === false) {
+        throw new RuntimeException('Kan ikke åpne ' . SECRETS_FILE);
+    }
+    if (!flock($fh, LOCK_EX)) {
+        fclose($fh);
+        throw new RuntimeException('Kan ikke låse ' . SECRETS_FILE);
+    }
+    $raw = stream_get_contents($fh);
+    $data = json_decode((string)$raw, true) ?: [];
     $data[$name . '_enc'] = encrypt_secret($value);
-    file_put_contents(SECRETS_FILE, json_encode($data));
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($data));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
 }
 
 function secret_is_set(string $name): bool {
-    $data = json_decode((string)@file_get_contents(SECRETS_FILE), true) ?: [];
+    $data = read_secrets();
     return !empty($data[$name . '_enc']);
 }
