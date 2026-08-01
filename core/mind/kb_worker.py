@@ -8,8 +8,14 @@ Her lastes modellen ÉN gang; deretter koster et oppslag noen hundredeler.
 
 Protokoll (én JSON-linje inn, én JSON-linje ut, på stdin/stdout):
 
-    inn : {"id": 7, "q": "spørsmål", "top": 6}
+    inn : {"id": 7, "q": "spørsmål", "top": 6, "colls": ["memory_main"]}
     ut  : {"id": 7, "treff": [...]}  eller  {"id": 7, "feil": "..."}
+
+`colls` er valgfritt og begrenser søket til de oppgitte samlingene. Filteret
+anvendes av `rank` FØR trefflisten kuttes til `top`, slik at et samlings-
+begrenset oppslag ikke kan bli fortrengt av høyt scorende dokumenter fra
+samlinger kalleren uansett ikke spurte om (chat og agentleveranser utgjør i
+dag brorparten av indeksen). Utelates feltet, søkes hele indeksen som før.
 
 Stdout er ren protokoll: alt bibliotekene måtte finne på å skrive dit under
 modellasting og søk, dirigeres til stderr, slik at én linje alltid er ett
@@ -57,6 +63,23 @@ class Index:
         return self.vectors, self.rows, self.state
 
 
+def _colls(value):
+    """Samlingsfilteret fra forespørselen, normalisert til rank()s `colls`.
+
+    Utelatt felt (None) betyr «hele indeksen» og gir None. Alt annet må være
+    en ikke-tom liste med samlingsnavn; er den misdannet, KASTER vi heller
+    enn å falle tilbake til None. Et filter vi ikke kan innfri skal aldri
+    stilltiende bli til et bredt søk – da hadde kalleren fått treff fra
+    samlinger den nettopp ba oss holde utenfor.
+    """
+    if value is None:
+        return None
+    if (not isinstance(value, (list, tuple)) or not value
+            or not all(isinstance(c, str) and c for c in value)):
+        raise ValueError("ugyldig colls: %r" % (value,))
+    return list(value)
+
+
 def _reply(obj):
     sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
     sys.stdout.flush()
@@ -90,6 +113,7 @@ def main():
                                   normalize_embeddings=True).astype("float32")[0]
                 hits = kb_search.rank(q, vectors, rows, qv,
                                       top=int(req.get("top") or 5),
+                                      colls=_colls(req.get("colls")),
                                       min_score=float(req.get("min_score") or 0.0))
             resp = {"id": rid, "treff": hits,
                     "indeks": state.get("last_run_human", "")}

@@ -153,8 +153,12 @@ def _drop(p):
         _proc = None
 
 
-def _ask(query, top, timeout):
-    """Ett oppslag mot den varme prosessen. Returnerer treffliste eller []."""
+def _ask(query, top, timeout, colls=None):
+    """Ett oppslag mot den varme prosessen. Returnerer treffliste eller [].
+
+    `colls` begrenser søket til gitte samlinger. Filteret anvendes i motoren
+    FØR trefflisten kuttes til `top` – se `section_scores`.
+    """
     global _seq
     deadline = time.time() + timeout
     if not _io_lock.acquire(timeout=timeout):
@@ -166,9 +170,11 @@ def _ask(query, top, timeout):
         _seq += 1
         rid = _seq
         p = _proc
+        req = {"id": rid, "q": query, "top": top}
+        if colls:
+            req["colls"] = list(colls)
         try:
-            p.stdin.write(json.dumps({"id": rid, "q": query, "top": top},
-                                     ensure_ascii=False) + "\n")
+            p.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
             p.stdin.flush()
         except (OSError, ValueError) as e:
             log.warning("kunne ikke sende spørsmål til kunnskapsmotoren: %s", e)
@@ -239,12 +245,13 @@ def distill(query, top=TOP_HITS, timeout=TIMEOUT_S, max_chars=MAX_CHARS):
 
 # ------------------------------------------------------------ seksjonsscoring
 
-# Arbeidsprosessens protokoll tar ikke imot et samlingsfilter: kb_worker kaller
-# alltid `rank(...)` uten `colls`. Eneste vei til en score per minneseksjon er
-# derfor å be om en lang nok treffliste til at seksjonene rekker med blant
-# agentleveransene, som ellers dominerer toppen. Rangeringen dedupliserer per
-# dokument, så taket er antall dokumenter i indeksen – i dag 55. 200 er
-# romslig, og en avkortet liste håndteres eksplisitt under (`gulv`).
+# Oppslaget ber om ÉN samling, og filteret anvendes i motoren før trefflisten
+# kuttes til `top`. Det er poenget: rangeringen dedupliserer per dokument, så
+# taket her er antall dokumenter i den ene samlingen (hovedminnet: en håndfull)
+# – ikke i hele indeksen, der chat og agentleveranser er i klart flertall og
+# ellers ville fortrengt minneseksjonene fra listen før vi fikk se dem.
+# 200 er dermed romslig med god margin, og en avkortet liste håndteres
+# uansett eksplisitt under (`gulv`).
 SECTION_FETCH_TOP = 200
 
 # Kortere enn TIMEOUT_S: seksjonsvalget skjer også i responderen, rett foran
@@ -256,11 +263,17 @@ def section_scores(query, kilde="memory_main", top=SECTION_FETCH_TOP,
                    timeout=SECTION_TIMEOUT_S):
     """Semantisk score per dokument i én samling, for `query`.
 
+    Motoren spørres med et samlingsfilter, slik at hele trefflisten kommer fra
+    `kilde`. Filtreringen under er derfor bare et belte til bukseselene – den
+    står igjen fordi en arbeidsprosess fra en eldre kb_worker.py ikke kjenner
+    feltet og svarer med treff fra alle samlinger. Arbeidsprosessen lever så
+    lenge daemonen lever, så det gjelder helt til neste restart.
+
     Returnerer `(scores, gulv)`:
 
       scores : {dokument_id: score} for dokumentene fra `kilde` som kom med i
                trefflisten.
-      gulv   : laveste score i HELE trefflisten dersom listen ble avkortet.
+      gulv   : laveste score i trefflisten dersom listen ble avkortet.
                Da vet vi at et dokument som mangler, ligger UNDER gulvet.
                Er listen uttømmende, er gulvet None: et dokument som mangler
                er da ukjent for indeksen (f.eks. laget etter siste
@@ -276,7 +289,7 @@ def section_scores(query, kilde="memory_main", top=SECTION_FETCH_TOP,
             return None
         if not _ensure_worker():
             return None     # varmes opp – kalleren klarer seg uten
-        hits = _ask(query[:2000], top, timeout)
+        hits = _ask(query[:2000], top, timeout, colls=[kilde])
         alle = [float(h["score"]) for h in hits
                 if isinstance(h.get("score"), (int, float))]
         if not alle:

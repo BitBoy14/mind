@@ -240,6 +240,10 @@ def test_tomt_hovedminne_gir_tom_liste_ogsa_med_motor(fake_db, kb_scores):
 
 # -------------------------------------------------- knowledge.section_scores
 
+# Treff fra flere samlinger i ett svar. Det er svaret fra en arbeidsprosess
+# UTEN samlingsfilter – enten en som ble startet før filteret kom, eller
+# ingen filtrering i det hele tatt. Fixturen ser bort fra `colls` med vilje,
+# nettopp for å holde den defensive filtreringen i `section_scores` i live.
 TREFF = [
     {"kilde": "agent_tasks", "dokument_id": "a1", "score": 0.90},
     {"kilde": "memory_main", "dokument_id": "m1", "score": 0.50},
@@ -253,17 +257,47 @@ def varm_motor(monkeypatch):
     """Kunnskapsmotoren svarer med `TREFF` – uten prosess, torch eller indeks."""
     monkeypatch.setattr(knowledge, "_ensure_worker", lambda: True)
     monkeypatch.setattr(knowledge, "_ask",
-                        lambda q, top, timeout: list(TREFF))
+                        lambda q, top, timeout, colls=None: list(TREFF))
+
+
+@pytest.fixture
+def spurt_om(monkeypatch):
+    """Fanger argumentene oppslaget sendes med, og svarer med `TREFF`."""
+    kall = {}
+
+    def _ask(q, top, timeout, colls=None):
+        kall.update(q=q, top=top, timeout=timeout, colls=colls)
+        return list(TREFF)
+    monkeypatch.setattr(knowledge, "_ensure_worker", lambda: True)
+    monkeypatch.setattr(knowledge, "_ask", _ask)
+    return kall
+
+
+def test_section_scores_ber_motoren_om_bare_den_ene_samlingen(spurt_om):
+    """Kjernen i filteret: motoren får samlingen MED spørsmålet, så den kan
+    sile før den kutter til `top`. Ber vi bredt og siler etterpå, kan
+    minneseksjonene være vasket ut av trefflisten før vi ser den – indeksen
+    består i hovedsak av chat og agentleveranser."""
+    ekte_section_scores("q", top=10)
+    assert spurt_om["colls"] == ["memory_main"]
+
+
+def test_section_scores_sender_kilden_som_filter(spurt_om):
+    ekte_section_scores("q", kilde="memory_details", top=10)
+    assert spurt_om["colls"] == ["memory_details"]
 
 
 def test_section_scores_plukker_ut_hovedminnet(varm_motor):
+    """Svarer motoren likevel bredt (arbeidsprosess startet før filteret kom),
+    siler `section_scores` fortsatt selv."""
     scores, _ = ekte_section_scores("q", top=10)
     assert scores == {"m1": 0.50, "m2": 0.20}
 
 
 def test_section_scores_setter_gulv_naar_listen_ble_avkortet(varm_motor):
     """Fikk vi like mange treff som vi ba om, er listen kuttet: gulvet er
-    laveste score i HELE listen, ikke bare i hovedminnedelen."""
+    laveste score i HELE trefflisten motoren ga oss – ikke bare i den delen
+    vi beholdt."""
     assert ekte_section_scores("q", top=len(TREFF))[1] == 0.20
 
 
@@ -283,7 +317,7 @@ def test_section_scores_er_none_naar_motoren_er_kald(monkeypatch):
 
 def test_section_scores_er_none_ved_tomt_svar(monkeypatch):
     monkeypatch.setattr(knowledge, "_ensure_worker", lambda: True)
-    monkeypatch.setattr(knowledge, "_ask", lambda q, top, timeout: [])
+    monkeypatch.setattr(knowledge, "_ask", lambda q, top, timeout, colls=None: [])
     assert ekte_section_scores("q") is None
 
 
@@ -294,7 +328,8 @@ def test_section_scores_sporr_ikke_pa_tom_tekst(monkeypatch, tom):
     vekket = []
     monkeypatch.setattr(knowledge, "_ensure_worker",
                         lambda: vekket.append(1) or True)
-    monkeypatch.setattr(knowledge, "_ask", lambda q, top, timeout: list(TREFF))
+    monkeypatch.setattr(knowledge, "_ask",
+                        lambda q, top, timeout, colls=None: list(TREFF))
     assert ekte_section_scores(tom) is None
     assert vekket == []
 
@@ -302,7 +337,7 @@ def test_section_scores_sporr_ikke_pa_tom_tekst(monkeypatch, tom):
 def test_section_scores_svelger_exceptions(monkeypatch):
     monkeypatch.setattr(knowledge, "_ensure_worker", lambda: True)
 
-    def _eksploder(q, top, timeout):
+    def _eksploder(q, top, timeout, colls=None):
         raise OSError("røret er brutt")
     monkeypatch.setattr(knowledge, "_ask", _eksploder)
     assert ekte_section_scores("q") is None
@@ -311,7 +346,7 @@ def test_section_scores_svelger_exceptions(monkeypatch):
 def test_section_scores_takler_treff_uten_score(monkeypatch):
     """Et misdannet treff skal ikke velte oppslaget – det hoppes over."""
     monkeypatch.setattr(knowledge, "_ensure_worker", lambda: True)
-    monkeypatch.setattr(knowledge, "_ask", lambda q, top, timeout: [
+    monkeypatch.setattr(knowledge, "_ask", lambda q, top, timeout, colls=None: [
         {"kilde": "memory_main", "dokument_id": "m1"},
         {"kilde": "memory_main", "dokument_id": "m2", "score": 0.4},
     ])
@@ -322,6 +357,7 @@ def test_section_scores_kutter_lange_sporringer(monkeypatch):
     sendt = []
     monkeypatch.setattr(knowledge, "_ensure_worker", lambda: True)
     monkeypatch.setattr(knowledge, "_ask",
-                        lambda q, top, timeout: sendt.append(q) or list(TREFF))
+                        lambda q, top, timeout, colls=None:
+                        sendt.append(q) or list(TREFF))
     ekte_section_scores("x" * 5000)
     assert len(sendt[0]) == 2000
