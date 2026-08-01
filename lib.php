@@ -6,7 +6,6 @@
 declare(strict_types=1);
 
 const MIND_DB = 'mind';
-const LOGIN_PASSWORD = 'REDACTED';
 const SECRETS_FILE = '/etc/mind/secrets.conf';
 const ENC_KEY_FILE = '/etc/mind/enc_key';
 const AGENTWORK_DIR = __DIR__ . '/agentwork';
@@ -114,6 +113,16 @@ function encrypt_secret(string $value): string {
     return base64_encode($iv . $ct);
 }
 
+/** Motstykke til encrypt_secret(); tom streng ved manglende/ugyldig verdi. */
+function decrypt_secret(string $value_b64): string {
+    if ($value_b64 === '') return '';
+    $raw = base64_decode($value_b64);
+    if ($raw === false || strlen($raw) <= 16) return '';
+    $iv = substr($raw, 0, 16);
+    $ct = substr($raw, 16);
+    return (string)openssl_decrypt($ct, 'aes-256-cbc', enc_key(), OPENSSL_RAW_DATA, $iv);
+}
+
 /**
  * Varsle høylytt hvis secrets.conf har videre tilgang enn tiltenkt.
  * Filen deles nødvendigvis av to systembrukere (daemonen kjører som
@@ -173,3 +182,6 @@ function secret_is_set(string $name): bool {
     $data = read_secrets();
     return !empty($data[$name . '_enc']);
 }
+
+/** Innloggingspassordet lagres/leses som en vanlig secret (login_password_enc), ikke hardkodet. */
+define('LOGIN_PASSWORD', decrypt_secret(read_secrets()['login_password_enc'] ?? ''));
