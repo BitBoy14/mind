@@ -164,27 +164,111 @@ def add_thought(text, kind="tanke", refs=None):
 
 # ------------------------------------------------------------------ agent tasks
 
+# Statuser der en oppgave fortsatt kan avbrytes (og der et avbruddsflagg
+# ennå ikke er ferdig håndhevet).
+CANCEL_PENDING_STATUSES = ["queued", "running", "cancelling"]
+
+
 def create_agent_task(title, brief, task_type="bygg", priority=3, created_by="brain"):
     doc = {"created_ts": time.time(), "title": title, "brief": brief,
            "type": task_type, "priority": priority, "status": "queued",
            "created_by": created_by, "started_ts": None, "finished_ts": None,
-           "result": None, "assessment": None, "files": [], "progress": ""}
+           "result": None, "assessment": None, "files": [], "progress": "",
+           "cancel_requested": False, "process": None}
     r = db().agent_tasks.insert_one(doc)
     doc["_id"] = r.inserted_id
     return doc
 
 
 def queued_tasks():
-    return list(db().agent_tasks.find({"status": "queued"})
+    # Flaggede oppgaver skal ikke startes – de går til kanselleringssveipet.
+    return list(db().agent_tasks.find({"status": "queued",
+                                       "cancel_requested": {"$ne": True}})
                 .sort([("priority", ASCENDING), ("created_ts", ASCENDING)]))
 
 
 def running_tasks():
-    return list(db().agent_tasks.find({"status": "running"}))
+    return list(db().agent_tasks.find({"status": {"$in": ["running", "cancelling"]}}))
 
 
 def update_task(task_id, patch):
     db().agent_tasks.update_one({"_id": task_id}, {"$set": patch})
+
+
+# ---------------------------------------------- prosess og kansellering (§2)
+
+def register_task_process(task_id, info):
+    """Lagre PID/prosessgruppe på oppgaven SÅ SNART prosessen er startet.
+
+    Uten dette har en kansellering ingenting å drepe – det var nettopp
+    dette som gjorde at «avbrutte» agenter fullførte arbeidet.
+    """
+    db().agent_tasks.update_one({"_id": task_id}, {"$set": {"process": info}})
+
+
+def mark_task_process_exited(task_id, returncode):
+    db().agent_tasks.update_one({"_id": task_id}, {"$set": {
+        "process.exited_ts": time.time(), "process.returncode": returncode}})
+
+
+def request_cancel(task_id, by="brain", reason=""):
+    """Sett avbruddsflagget. Selve drepingen (og den verifiserte slutt-
+    statusen) håndheves av agent-manageren i daemonen, som eier prosessen.
+
+    Returnerer True hvis oppgaven fortsatt var aktiv og altså ble flagget.
+    """
+    r = db().agent_tasks.update_one(
+        {"_id": task_id, "status": {"$in": CANCEL_PENDING_STATUSES}},
+        {"$set": {"cancel_requested": True, "cancel_requested_ts": time.time(),
+                  "cancel_requested_by": by, "cancel_reason": reason,
+                  "status": "cancelling",
+                  "progress": "avbrudd bestilt – dreper prosessen …"}})
+    return r.matched_count > 0
+
+
+def is_cancel_requested(task_id):
+    d = db().agent_tasks.find_one({"_id": task_id}, {"cancel_requested": 1})
+    return bool(d and d.get("cancel_requested"))
+
+
+def tasks_awaiting_cancel():
+    """Flaggede oppgaver som ennå ikke har fått en verifisert slutt-status."""
+    return list(db().agent_tasks.find(
+        {"cancel_requested": True,
+         "status": {"$in": CANCEL_PENDING_STATUSES}}))
+
+
+def update_task_if_active(task_id, patch):
+    """Skriv patch bare hvis oppgaven IKKE er flagget avbrutt.
+
+    Returnerer 0 hvis den er flagget – da skal kalleren ikke overskrive
+    kanselleringens slutt-status med 'done'/'failed'.
+    """
+    r = db().agent_tasks.update_one(
+        {"_id": task_id, "cancel_requested": {"$ne": True}}, {"$set": patch})
+    return r.matched_count
+
+
+def record_cancel_outcome(task_id, kill_info, status, result=None):
+    """Skriv det VERIFISERTE utfallet av en kansellering.
+
+    status er 'cancelled' kun når kill_info bekrefter at prosessen er død;
+    ellers 'cancel_failed'. Hele kill_info lagres, så dokumentet alltid
+    forklarer hvorfor statusen ble som den ble.
+    """
+    patch = {"status": status, "cancel_kill": kill_info,
+             "cancel_enforced_ts": time.time(), "finished_ts": time.time(),
+             "progress": ""}
+    if result is not None:
+        patch["result"] = result
+    db().agent_tasks.update_one({"_id": task_id},
+                                {"$set": patch, "$push": {"cancel_log": kill_info}})
+
+
+def note_cancel_progress(task_id, kill_info, progress):
+    """Mellomtilstand: avbrudd er bestilt, men ikke ferdig verifisert."""
+    db().agent_tasks.update_one({"_id": task_id}, {"$set": {
+        "cancel_kill": kill_info, "progress": progress}})
 
 
 # ------------------------------------------------------------------ prompts

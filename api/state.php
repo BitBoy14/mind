@@ -26,13 +26,18 @@ $chat = array_reverse(mfind('chat', ['ts' => ['$gt' => $epoch]],
 $thoughts = mfind('thoughts', [], ['sort' => ['ts' => -1], 'limit' => 40]);
 
 $agents = [
-    'running' => mfind('agent_tasks', ['status' => 'running'], ['sort' => ['started_ts' => 1]]),
+    // 'cancelling' = avbrudd bestilt, men prosessen er ennå ikke bekreftet død.
+    // Den hører hjemme blant de aktive helt til drapet er verifisert.
+    'running' => mfind('agent_tasks', ['status' => ['$in' => ['running', 'cancelling']]],
+        ['sort' => ['started_ts' => 1]]),
     'queued' => mfind('agent_tasks', ['status' => 'queued'], ['sort' => ['priority' => 1, 'created_ts' => 1]]),
-    'finished' => mfind('agent_tasks', ['status' => ['$in' => ['done', 'failed', 'cancelled']]],
+    'finished' => mfind('agent_tasks',
+        ['status' => ['$in' => ['done', 'failed', 'cancelled', 'cancel_failed']]],
         ['sort' => ['finished_ts' => -1], 'limit' => 15]),
 ];
 foreach ($agents as &$grp) {
-    foreach ($grp as &$t) unset($t['brief']); // holde payloaden slank
+    // holde payloaden slank; cancel_kill beholdes (vises i oppgaveraden)
+    foreach ($grp as &$t) unset($t['brief'], $t['process'], $t['cancel_log']);
 }
 unset($grp, $t);
 

@@ -179,6 +179,30 @@ case 'memsearch':
     }
     ok(['hits' => $hits]);
 
+case 'cancel_task':
+    // Dashbordet setter KUN avbruddsflagget. php-fpm (www-data) eier ikke
+    // agentprosessen, så selve drapet – og den verifiserte slutt-statusen –
+    // gjøres av daemonen (mind/agents.py: enforce_cancellations).
+    $id = (string)($in['id'] ?? '');
+    if (!$id) fail('mangler id');
+    $t = mfindone('agent_tasks', ['_id' => oid($id)]);
+    if (!$t) fail('ukjent oppgave', 404);
+    if (!in_array($t['status'] ?? '', ['queued', 'running', 'cancelling'], true)) {
+        fail('oppgaven er allerede avsluttet (' . ($t['status'] ?? '?') . ')');
+    }
+    mupdate('agent_tasks', ['_id' => oid($id)], ['$set' => [
+        'cancel_requested' => true,
+        'cancel_requested_ts' => microtime(true),
+        'cancel_requested_by' => 'bruker',
+        'cancel_reason' => 'avbrutt fra dashbordet',
+        'status' => 'cancelling',
+        'progress' => 'avbrudd bestilt – dreper prosessen …',
+    ]]);
+    mind_event('agent_cancel_requested',
+        'Bruker avbrøt agentoppgaven «' . ($t['title'] ?? '') . '». Prosessen '
+        . 'drepes og verifiseres av daemonen.', ['task_id' => $id], 1);
+    ok();
+
 case 'task_files':
     $id = (string)($in['id'] ?? '');
     $t = mfindone('agent_tasks', ['_id' => oid($id)]);

@@ -72,6 +72,8 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
   border-radius:4px; padding:0 5px; color:var(--dim); margin-right:5px; }
 .status-running { color:var(--amber); } .status-queued { color:var(--dim); }
 .status-done { color:var(--green); } .status-failed,.status-cancelled { color:var(--red); }
+/* avbrudd bestilt, prosessen ennå ikke bekreftet død – og avbrudd som slo feil */
+.status-cancelling { color:var(--amber); } .status-cancel_failed { color:var(--purple); }
 .meter { height:9px; background:var(--panel2); border-radius:5px; overflow:hidden; margin:6px 0; }
 .meter > div { height:100%; background:var(--accent); }
 .tabs { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
@@ -431,7 +433,10 @@ function drawAgents(){
       <span class="ts">${esc(t.status)}${dur !== null ? ' · ' + dur + ' min' : ''} · ${ago(t.finished_ts || t.started_ts || t.created_ts)}</span>
       ${t.progress ? `<div class="muted">${esc(t.progress)}</div>` : ''}
       ${t.result ? `<div class="muted" style="white-space:pre-wrap">${esc(String(t.result).slice(0,300))}</div>` : ''}
+      ${t.cancel_kill ? `<div class="muted">avbrudd: ${esc(t.cancel_kill.result || '')} – ${esc(t.cancel_kill.detail || '')}</div>` : ''}
       <span class="muted clicky" onclick="openTask('${t._id}')">${ICO.folder} detaljer/filer</span>
+      ${['queued','running','cancelling'].includes(t.status)
+        ? ` <span class="muted clicky" onclick="cancelTask('${t._id}')">✕ avbryt</span>` : ''}
     </div>`;
   };
   render('agentsbody', a,
@@ -565,6 +570,15 @@ async function openMemDoc(col, id){
       ${(d.pointers||[]).length ? '· pekere: ' + d.pointers.map(esc).join(', ') : ''}</p>
     <pre class="doc">${esc(d.content)}</pre>
     <button onclick="closeModal()">Lukk</button>`);
+}
+
+async function cancelTask(id){
+  // Setter bare avbruddsflagget; daemonen dreper prosessgruppen og skriver
+  // den verifiserte slutt-statusen (cancelled / cancel_failed).
+  if (!confirm('Avbryte oppgaven? Prosessen drepes (SIGTERM, så SIGKILL).')) return;
+  const j = await api({action:'cancel_task', id});
+  if (!j.ok) alert(j.error || 'kunne ikke avbryte');
+  poll();
 }
 
 async function openTask(id){

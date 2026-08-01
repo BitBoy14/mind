@@ -153,10 +153,16 @@ def _apply_result(res, kind):
 
     for tid in res.get("avbryt_oppgaver") or []:
         try:
-            db.db().agent_tasks.update_one(
-                {"_id": ObjectId(str(tid)), "status": {"$in": ["queued", "running"]}},
-                {"$set": {"status": "cancelled", "finished_ts": time.time()}})
-            decisions.append(f"avbrøt oppgave {tid}")
+            # Kun avbruddsflagget settes her. Agent-manageren dreper
+            # prosessgruppen, verifiserer i /proc at den er borte og skriver
+            # slutt-statusen – status settes aldri på intensjon alene.
+            if db.request_cancel(ObjectId(str(tid)), by="brain",
+                                 reason="avbrutt av hovedhjernen i syklusen"):
+                decisions.append(f"ba om avbrudd av oppgave {tid} "
+                                 "(prosessen drepes og verifiseres)")
+            else:
+                decisions.append(f"oppgave {tid} var allerede avsluttet – "
+                                 "ingenting å avbryte")
         except Exception:
             pass
 
