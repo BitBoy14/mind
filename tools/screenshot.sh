@@ -2,11 +2,25 @@
 # screenshot.sh -- ta et PNG-screenshot av en URL med en headless nettleser.
 #
 # BRUK:
-#   tools/screenshot.sh <URL> <utfilsti.png> [bredde] [hoyde] [ventesekunder]
+#   tools/screenshot.sh [flagg] <URL> <utfilsti.png> [bredde] [hoyde] [ventesekunder]
+#
+# Flagg (må stå FØR URL-en):
+#   --auth              logg inn: lager en kortlivet MINDSESS-sesjon lokalt og
+#                       gir den til nettleseren, slik at innloggede sider kan
+#                       fotograferes. Sesjonen slettes alltid når skriptet er
+#                       ferdig (også ved feil). Krever https og at URL-en peker
+#                       på MIND-verten (se MIND_HOST under). Se tools/mind-session.sh.
+#   --cookie NAVN=VERDI en vilkårlig cookie (kan gjentas).
+#   --full-page         fotografer hele siden, ikke bare vinduet.
 #
 # Eksempel:
-#   tools/screenshot.sh https://www.shrtct.site/mind/ /var/www/www.shrtct.site/mind/notes/dashbord.png
+#   tools/screenshot.sh https://www.shrtct.site/mind/ /tmp/innlogging.png
+#   tools/screenshot.sh --auth https://www.shrtct.site/mind/ /tmp/dashbord.png
 #   tools/screenshot.sh https://example.com out.png 1920 1080 3
+#
+# ADVARSEL: skriv ALDRI screenshots til repoet/webroot (/var/www/...) -- alt
+# der er offentlig lesbart, og et bilde av et innlogget dashbord lekker
+# innhold. Bruk /tmp/ eller en katalog utenfor webroot.
 #
 # Standard vindusstørrelse er 1280x800. "ventesekunder" (default 2) er en
 # --virtual-time-budget-ish pause chromium får før snapshot tas, nyttig for
@@ -16,6 +30,11 @@
 # rekkefølgen: chromium, chromium-browser, google-chrome, google-chrome-stable,
 # wkhtmltoimage. Første treff brukes. Hvis ingen finnes avslutter skriptet med
 # tydelig feilmelding (exit 3) -- det installeres ALDRI systempakker automatisk.
+#
+# TO KJØREMÅTER: uten cookies brukes chromiums enkle --screenshot-modus (som
+# før). Med --auth/--cookie/--full-page finnes ingen tilsvarende kommandolinje-
+# flagg i chromium, så jobben settes ut til tools/cdp_screenshot.py, som styrer
+# nettleseren over DevTools-protokollen (kun Python-stdlib, ingen pip/venv).
 #
 # VIKTIG SNAP-BEGRENSNING (Ubuntu): chromium-browser her er en snap-pakke med
 # strict confinement som kun har "home"-interfacet tilkoblet (se
@@ -43,9 +62,32 @@
 set -euo pipefail
 
 usage() {
-    echo "Bruk: $0 <URL> <utfilsti.png> [bredde=1280] [hoyde=800] [ventesekunder=2]" >&2
+    echo "Bruk: $0 [--auth] [--cookie NAVN=VERDI] [--full-page] <URL> <utfilsti.png> [bredde=1280] [hoyde=800] [ventesekunder=2]" >&2
     exit 1
 }
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Verten --auth-sesjonen gjelder for. Cookien sendes ALDRI til noen annen vert:
+# det ville lekke et gyldig innloggingsbevis til en tredjepart.
+MIND_HOST="${MIND_HOST:-www.shrtct.site}"
+
+AUTH=0
+FULLPAGE=0
+COOKIES=()
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --auth)      AUTH=1; shift ;;
+        --full-page) FULLPAGE=1; shift ;;
+        --cookie)
+            [ "$#" -ge 2 ] || usage
+            COOKIES+=("$2"); shift 2 ;;
+        -h|--help)   usage ;;
+        --)          shift; break ;;
+        -*)          echo "FEIL: ukjent flagg: $1" >&2; usage ;;
+        *)           break ;;
+    esac
+done
 
 if [ "$#" -lt 2 ]; then
     usage
@@ -66,6 +108,52 @@ case "$URL" in
 esac
 
 mkdir -p "$(dirname "$OUTFILE")"
+
+# Verten i URL-en, uten skjema, bruker@, port og sti.
+url_host() {
+    printf '%s' "$1" | sed -e 's|^[a-zA-Z][a-zA-Z0-9+.-]*://||' \
+                           -e 's|[/?#].*$||' -e 's|^[^@]*@||' -e 's|:[0-9]*$||'
+}
+
+if [ "$AUTH" -eq 1 ]; then
+    case "$URL" in
+        https://*) ;;
+        *) echo "FEIL: --auth krever https (sesjonscookien er Secure)" >&2; exit 1 ;;
+    esac
+    if [ "$(url_host "$URL")" != "$MIND_HOST" ]; then
+        echo "FEIL: --auth er kun tillatt mot $MIND_HOST (fikk: $(url_host "$URL"))." >&2
+        echo "      Sett MIND_HOST hvis plattformen har flyttet." >&2
+        exit 1
+    fi
+    if ! MIND_SID="$("$SCRIPT_DIR/mind-session.sh" create)"; then
+        echo "FEIL: klarte ikke opprette midlertidig sesjon (se melding over)" >&2
+        exit 2
+    fi
+    # Rydd ALLTID opp: sesjons-ID-en er et gyldig innloggingsbevis så lenge
+    # filen finnes. Ingen exec nedenfor -- det ville hoppet over denne fella.
+    trap '"$SCRIPT_DIR/mind-session.sh" destroy "$MIND_SID" >/dev/null 2>&1 || true' EXIT
+    COOKIES+=("MINDSESS=$MIND_SID")
+fi
+
+# Cookies og helside krever DevTools-veien; chromium har ingen flagg for det.
+if [ "${#COOKIES[@]}" -gt 0 ] || [ "$FULLPAGE" -eq 1 ]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "FEIL: --auth/--cookie/--full-page krever python3 (kun stdlib brukes)" >&2
+        exit 3
+    fi
+    CDP_ARGS=(--url "$URL" --out "$OUTFILE" --width "$WIDTH" --height "$HEIGHT" --wait "$WAIT_S")
+    [ "$FULLPAGE" -eq 1 ] && CDP_ARGS+=(--full-page)
+    rc=0
+    if [ "${#COOKIES[@]}" -gt 0 ]; then
+        # Cookies sendes på stdin, ikke som argumenter: kommandolinjer er
+        # lesbare for alle lokale brukere via ps/proc.
+        printf '%s\n' "${COOKIES[@]}" \
+            | python3 "$SCRIPT_DIR/cdp_screenshot.py" "${CDP_ARGS[@]}" --cookies-stdin || rc=$?
+    else
+        python3 "$SCRIPT_DIR/cdp_screenshot.py" "${CDP_ARGS[@]}" || rc=$?
+    fi
+    exit "$rc"
+fi
 
 find_browser() {
     for bin in chromium chromium-browser google-chrome google-chrome-stable; do
