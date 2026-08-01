@@ -15,8 +15,13 @@ $authed = is_authed();
   --red:#9C3A29; --amber:#8A5A18; --amber-dark:#6E4610; --purple:#7A4A6E;
 }
 * { box-sizing:border-box; }
+/* Hindrer at mobile nettlesere blåser opp skriftstørrelser på egen hånd. */
+html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
 body { margin:0; background:var(--bg); color:var(--text);
-  font:14px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif; }
+  font:14px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif;
+  /* arves av alt innhold: lange URL-er/ID-er bryter i stedet for å
+     sprenge kolonnen og gi horisontal scrolling på smal skjerm */
+  overflow-wrap:break-word; }
 a { color:var(--accent-text); text-decoration:none; }
 svg.ic { vertical-align:-2px; flex-shrink:0; }
 button { background:var(--panel2); color:var(--text); border:1px solid var(--border);
@@ -44,6 +49,9 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 
 #grid { display:grid; grid-template-columns:1fr 1fr 400px; gap:12px;
   padding:12px 16px; align-items:start; }
+/* min-width:0 opphever grid-elementers auto-minimum, som ellers lar bredt
+   innhold presse hele rutenettet ut i bredden. */
+#grid > div { min-width:0; }
 @media (max-width:1250px){ #grid{ grid-template-columns:1fr 1fr; } #chatpanel{grid-column:1/-1;} }
 @media (max-width:850px){ #grid{ grid-template-columns:1fr; } }
 .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px;
@@ -100,6 +108,84 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
 
 #login { max-width:340px; margin:16vh auto; text-align:center; }
 #login input { width:100%; margin:12px 0; text-align:center; }
+
+/* ======================= mobil (telefon, ≤640px) =======================
+   Ren responsivitet: layout, trykkmål og lesbarhet. Ørkentemaets farger,
+   rammer og typografi er uendret, og ingenting her treffer skrivebordet. */
+@media (max-width:640px){
+
+  /* Topplinjen brytes over flere rader på telefon og la den ta ~20 % av
+     skjermen i all evighet. Den scroller heller bort her; innholdet er
+     viktigere enn statuslinjen på en 844px høy skjerm. */
+  #topbar { position:static; padding:8px 10px; gap:7px; }
+  #topbar .logo { font-size:16px; }
+  #topbar button { padding:9px 11px; }
+  /* Tannhjulet står støtt alene; teksten koster en hel knapperad. */
+  .btxt { display:none; }
+  .spacer { display:none; }
+  /* Token-linjen får sin egen lave tekstrad; de fem knappene pakker seg
+     tett rundt den. Topplinjen blir ~200px på 390px bredde – det er prisen
+     for 44px trykkmål, og den scroller bort siden den ikke er sticky her. */
+  .tokline { flex:1 1 100%; text-align:left; }
+
+  /* Trykkvennlige mål: minst 44px høyde på alt som kan trykkes. */
+  button { min-height:44px; padding:9px 14px; font-size:14px; }
+  /* 16px i skrivefelt er terskelen der iOS Safari slutter å auto-zoome
+     ved fokus – derfor akkurat 16, ikke 15. Radio/avkryssing holdes utenfor
+     så de ikke blir 44px høye bokser. */
+  input:not([type=radio]):not([type=checkbox]), select, textarea {
+    min-height:44px; padding:9px 11px; font-size:16px; }
+
+  /* Mer av den smale skjermen går til innhold. */
+  #grid { padding:10px; gap:10px; }
+  #adminband { margin:10px 10px 0; }
+  .panel { margin-bottom:10px; }
+  .panel h2 { padding:10px 12px; }
+  .panel .body { max-height:340px; padding:10px 12px; }
+
+  /* Sekundærtekst var 10–12px – lesbar uten å måtte zoome. */
+  .muted, .ts { font-size:12.5px; }
+  .kindtag { font-size:11px; padding:1px 6px; }
+  /* «Kommentér» og «detaljer/filer» er inline-lenker; gi dem tommelhøyde. */
+  .item span.clicky { display:inline-block; padding:9px 2px; }
+
+  /* Chatten er hovedinngangen på telefon. Den lå nederst, etter fire
+     paneler (~2000px scrolling); her flyttes den øverst – rett under
+     eventuelle forslag til godkjenning, som fortsatt kommer først. */
+  #chatpanel { order:-1; }
+  /* dvh følger den synlige delen av vinduet, så adresselinje og
+     mobiltastatur ikke dytter skrivefeltet og Send-knappen ut av syne.
+     vh-linjen over er fallback for eldre nettlesere. */
+  #chatpanel .panel { height:70vh; height:clamp(320px, 68dvh, 620px); }
+  #chatlog { padding:10px; gap:7px; }
+  .msg { max-width:92%; }
+  #chatform { padding:8px; gap:6px; }
+  #chatinput { height:56px; }
+
+  /* Modaler fyller skjermen i stedet for å bli en smal boks i en boks. */
+  .modal-back { padding:8px; }
+  .modal { padding:14px; max-height:92dvh; border-radius:10px; }
+  .formrow { flex-direction:column; align-items:stretch; gap:6px; margin-bottom:14px; }
+  .formrow label { width:auto; }
+  .formrow select, .formrow input:not([type=number]):not([type=radio]) { width:100%; }
+  pre.doc { font-size:13px; max-height:50dvh; }
+
+  #login { margin:9vh auto; padding:0 18px; max-width:100%; }
+}
+
+/* Telefon i LANDSKAP faller utenfor regelen over (bredden blir 700–950px),
+   men høyden er da knapp og fingeren er fortsatt fingeren. pointer:coarse
+   gjør at dette kun treffer berøringsskjermer – aldri en vanlig skjerm. */
+@media (max-height:520px) and (pointer:coarse){
+  #topbar { position:static; }
+  button { min-height:44px; }
+  input:not([type=radio]):not([type=checkbox]), select, textarea {
+    min-height:44px; font-size:16px; }
+  #chatpanel { order:-1; }
+  #chatpanel .panel { height:82vh; height:calc(100dvh - 20px); }
+  .panel .body { max-height:60vh; }
+  .modal { max-height:96dvh; }
+}
 </style>
 </head>
 <body>
@@ -138,7 +224,7 @@ async function doLogin(){
   <span class="spacer"></span>
   <span class="tokline" id="tokline">tokens …</span>
   <button title="Nullstill token-teller" onclick="resetTokens()">↺</button>
-  <button onclick="openSettings()"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.97 7.97 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.9 3h-4l-.4 2.9a8 8 0 0 0-1.7 1l-2.5-1-2 3.4L6.4 11a7.97 7.97 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.9h4l.4-2.9a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13z"/></svg> Innstillinger</button>
+  <button onclick="openSettings()"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.97 7.97 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.9 3h-4l-.4 2.9a8 8 0 0 0-1.7 1l-2.5-1-2 3.4L6.4 11a7.97 7.97 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.9h4l.4-2.9a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13z"/></svg> <span class="btxt">Innstillinger</span></button>
   <button onclick="doLogout()">Logg ut</button>
 </div>
 
