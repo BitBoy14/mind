@@ -11,6 +11,18 @@ const ENC_KEY_FILE = '/etc/mind/enc_key';
 const AGENTWORK_DIR = __DIR__ . '/agentwork';
 
 session_name('MINDSESS');
+// Herding av sesjonscookien: kun flaggene settes - levetid/path/domene beholdes
+// slik de allerede er, sa eksisterende sesjoner ikke invalideres.
+$mind_cp = session_get_cookie_params();
+session_set_cookie_params([
+    'lifetime' => $mind_cp['lifetime'],
+    'path'     => $mind_cp['path'],
+    'domain'   => $mind_cp['domain'],
+    'secure'   => true,   // sendes kun over HTTPS
+    'httponly' => true,   // ikke lesbar fra JavaScript
+    'samesite' => 'Lax',  // ikke sendt ved cross-site POST
+]);
+unset($mind_cp);
 session_start();
 
 function is_authed(): bool {
