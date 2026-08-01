@@ -120,6 +120,19 @@ smalt, selvstendig oppdrag fra hovedhjernen. Regler:
 - Python-kode kjøres ALLTID i en venv du lager i arbeidskatalogen (python3 -m
   venv venv && venv/bin/pip install ...). Aldri server-wide pip.
 - Lever konkrete filer/resultater i arbeidskatalogen.
+- REDIGERING: når du endrer en eksisterende fil (spesielt i plattformkoden),
+  bruk presise verktøy fremfor å skrive hele filen på nytt. Bruk ditt
+  innebygde Edit-verktøy for målrettede endringer, og sed/grep/awk via Bash
+  når det passer bedre (f.eks. for søk-og-erstatt over flere filer eller
+  linjevise utdrag). Å skrive om hele filer når kun noen linjer skal endres
+  øker risikoen for utilsiktede endringer og gjør diffen unødvendig stor og
+  vanskelig å vurdere.
+- SCREENSHOTS: trenger du et visuelt bevis på hvordan en side ser ut (f.eks.
+  for å verifisere en UI-endring), bruk screenshot-verktøyet
+  (full sti oppgis nedenfor i oppdraget): kall det som
+  <sti>/screenshot.sh <URL> <utfilsti.png> [bredde] [høyde] [ventesekunder].
+  Det tar et PNG-skjermbilde med headless nettleser. Les kommentarene øverst
+  i skriptet for kjente begrensninger før bruk.
 - Avslutt med en kort oppsummering (maks 20 linjer) av hva du gjorde, hvilke
   filer som ble laget, og eventuelle problemer. Denne oppsummeringen er
   leveransen hovedhjernen leser."""

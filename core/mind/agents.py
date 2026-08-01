@@ -43,6 +43,9 @@ def _full_brief(task):
             "\n\nHvis oppdraget gjelder plattformkoden i "
             f"{config.BASE_DIR}: gjør endringene der og commit i git med "
             "beskrivende melding (git add -A && git commit -m '...').\n\n"
+            f"Screenshot-verktøyet ligger på "
+            f"{config.BASE_DIR}/tools/screenshot.sh — bruk det slik omtalt "
+            "over dersom oppdraget krever et visuelt bevis.\n\n"
             f"=== OPPDRAG: {task['title']} ===\n\n{task['brief']}")
 
 
