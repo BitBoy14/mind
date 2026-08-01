@@ -135,6 +135,12 @@ def _new_detail(title, content, source="brain", section_id=None):
     return r.inserted_id
 
 
+def add_detail(title, content, source="agent", section_id=None):
+    """Offentlig inngang for å opprette et detaljminne utenfor minne_ops,
+    f.eks. fra agent-rammeverket når en oppgave fullføres."""
+    return _new_detail(title, content, source, section_id)
+
+
 def apply_ops(ops, actor="brain"):
     """Utfør en liste minne_ops fra hovedhjernen. Returnerer klartekst-sammendrag."""
     done = []

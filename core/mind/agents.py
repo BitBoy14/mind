@@ -9,12 +9,15 @@ import subprocess
 import threading
 import time
 
-from . import brain, config, db, prompts
+from . import brain, config, db, memory, prompts
 
 _active = {}  # task_id(str) -> Thread
 _lock = threading.Lock()
 
 SKIP_DIRS = {"venv", "node_modules", ".git", "__pycache__"}
+
+# BSON-dokumentgrensen er 16 MB; hold detaljminnet trygt godt under det.
+MAX_DETAIL_CHARS = 500_000
 
 
 def _workdir(task_id):
@@ -102,10 +105,21 @@ def run_task(task):
         db.update_task(tid, {"status": "done", "finished_ts": time.time(),
                              "result": (result or "")[-8000:], "files": files,
                              "progress": ""})
+        detail_id = None
+        if result:
+            full = result
+            if len(full) > MAX_DETAIL_CHARS:
+                full = full[:MAX_DETAIL_CHARS] + (
+                    "\n\n[... avkortet, %d tegn totalt ...]" % len(result))
+            detail_id = memory.add_detail(
+                f"Agentresultat: {task['title']} [{tid}]", full, source="agent")
+        payload = {"task_id": str(tid), "resultat": (result or "")[:1500],
+                   "filer": files[:30]}
+        if detail_id:
+            payload["detalj_id"] = str(detail_id)
         db.log_event("agent_done",
                      f"Agent ferdig: {task['title']}",
-                     {"task_id": str(tid), "resultat": (result or "")[:1500],
-                      "filer": files[:30]}, priority=2)
+                     payload, priority=2)
     except Exception as e:
         db.update_task(tid, {"status": "failed", "finished_ts": time.time(),
                              "result": f"FEILET: {e}", "progress": ""})
