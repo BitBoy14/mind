@@ -3,6 +3,10 @@ mening. Byggeoppgaver kjøres som headless Claude Code med verktøy i egen
 arbeidskatalog; rene tekst/analyse-oppgaver kan gå via Motor A. Resultater
 leveres tilbake som hendelser hovedhjernen vurderer i neste pulsslag.
 
+Hver agent kjører i sin egen transiente systemd-scope (scopes.py) og altså
+utenfor mind.service sin cgroup: daemonen kan startes på nytt uten å drepe
+arbeid som er i gang.
+
 Kansellering er kooperativ OG fysisk: hver agent får sin egen prosessgruppe,
 PID-en lagres i oppgavedokumentet ved oppstart, og et avbruddsflagg fører til
 at gruppen faktisk drepes (SIGTERM → SIGKILL) og verifiseres død før noen
@@ -15,18 +19,25 @@ import subprocess
 import threading
 import time
 
-from . import brain, config, db, memory, procctl, prompts
+from . import brain, config, db, memory, procctl, prompts, scopes
 
 _active = {}  # task_id(str) -> Thread
 _cancelling = set()  # task_id(str) som har et pågående kanselleringsforsøk
 _lock = threading.Lock()
 
-SKIP_DIRS = {"venv", "node_modules", ".git", "__pycache__"}
+# Kjøreartefakter (agentens rå stdout/stderr) legges i en egen katalog som
+# holdes UTENFOR fillisten agenten «leverte» – de er driftsspor, ikke leveranse.
+RUNDIR = ".mind_run"
+
+SKIP_DIRS = {"venv", "node_modules", ".git", "__pycache__", RUNDIR}
 
 # BSON-dokumentgrensen er 16 MB; hold detaljminnet trygt godt under det.
 MAX_DETAIL_CHARS = 500_000
 
 AGENT_TIMEOUT_S = 3600
+
+# Hvor ofte vi ser etter om en agent som overlevde en daemon-restart er ferdig.
+ORPHAN_POLL_S = 5.0
 
 # Hvor mye av agentsvaret som følger med agent_done-hendelsen. Hele svaret
 # ligger alltid i detaljminnet, men hovedhjernen leser hendelsen FØRST og
@@ -79,6 +90,14 @@ def _full_brief(task):
             f"=== OPPDRAG: {task['title']} ===\n\n{task['brief']}")
 
 
+def _read_text(path, limit=8_000_000):
+    try:
+        with open(path, "r", errors="replace") as f:
+            return f.read(limit)
+    except OSError:
+        return ""
+
+
 def _run_claude_agent(task, workdir, model):
     cmd = [
         "claude", "-p",
@@ -90,12 +109,28 @@ def _run_claude_agent(task, workdir, model):
     env = dict(os.environ)
     env.pop("CLAUDECODE", None)
     t0 = time.time()
+    # Utdata går til FIL, ikke til et rør tilbake hit. Et rør ville bundet
+    # agenten til daemonens levetid og undergravd hele scope-poenget under:
+    # dør daemonen, lukkes lesesiden, og claude – som skriver hele svaret
+    # helt til slutt – ville fått SIGPIPE nettopp idet arbeidet var ferdig.
+    # Med filer ligger resultat og feiltekst trygt på disk uansett.
+    outdir = os.path.join(workdir, RUNDIR)
+    os.makedirs(outdir, exist_ok=True)
+    out_path = os.path.join(outdir, "claude_stdout.json")
+    err_path = os.path.join(outdir, "claude_stderr.log")
     # start_new_session ⇒ egen sesjon og egen prosessgruppe (pgid == pid).
     # Da kan HELE treet – claude og alt den selv starter – drepes samlet ved
     # kansellering, i stedet for at foreldreløse barn jobber videre.
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True, env=env,
-                            cwd=workdir, start_new_session=True)
+    #
+    # scopes.popen legger i tillegg prosessen i sin EGEN systemd-scope, slik
+    # at den ikke lever i mind.service sin cgroup: da overlever agenten at
+    # daemonen startes på nytt. --scope EXEC-er kommandoen, så pid, pgid og
+    # stdin-røret er nøyaktig som med en rå Popen.
+    with open(out_path, "w") as fout, open(err_path, "w") as ferr:
+        proc, scope = scopes.popen(
+            cmd, scopes.unit_name(task["_id"]),
+            stdin=subprocess.PIPE, stdout=fout, stderr=ferr,
+            text=True, env=env, cwd=workdir, start_new_session=True)
     pgid = procctl.pgid_of(proc.pid)
     # Registreres FØR vi venter: et avbrudd som kommer i neste sekund skal
     # finne noe å drepe.
@@ -104,9 +139,17 @@ def _run_claude_agent(task, workdir, model):
         "starttime": procctl.proc_starttime(proc.pid),
         "started_ts": time.time(), "host": os.uname().nodename,
         "cmd": " ".join(cmd), "exited_ts": None, "returncode": None,
+        "scoped": scope.get("scoped"), "scope_unit": scope.get("unit"),
+        "cgroup": scope.get("cgroup"),
     })
+    if not scope.get("scoped"):
+        # Verdt å vite: denne agenten dør hvis daemonen restartes.
+        db.log_event("agent_scope_fallback",
+                     "Agent uten egen systemd-scope: %s – %s"
+                     % (task["title"], scope.get("detail", "")),
+                     {"task_id": str(task["_id"])}, priority=4)
     try:
-        out, err = proc.communicate(_full_brief(task), timeout=AGENT_TIMEOUT_S)
+        proc.communicate(_full_brief(task), timeout=AGENT_TIMEOUT_S)
     except subprocess.TimeoutExpired:
         kill = procctl.kill_group(proc.pid, pgid)
         proc.communicate()  # høst prosessen etter drapet
@@ -114,7 +157,8 @@ def _run_claude_agent(task, workdir, model):
         raise RuntimeError("agent (claude -p) tidsavbrudd etter %d s – %s" %
                            (AGENT_TIMEOUT_S, procctl.summarize(kill)))
     db.mark_task_process_exited(task["_id"], proc.returncode)
-    out = (out or "").strip()
+    out = _read_text(out_path).strip()
+    err = _read_text(err_path)
     if proc.returncode != 0 or not out:
         raise RuntimeError("agent (claude -p) feilet rc=%d: %s" %
                            (proc.returncode, (err or out or "")[-1200:]))
@@ -173,6 +217,43 @@ def _leveranse_utdrag(result):
     return None, None
 
 
+def _deliver(task, result, files):
+    """Slutt-status, detaljminne og agent_done-hendelsen for et ferdig svar.
+
+    Skilt ut fra run_task fordi den samme leveransen også skal skje for en
+    agent som ble ferdig mens daemonen var nede (se _attach_orphan).
+    """
+    tid = task["_id"]
+    if db.update_task_if_active(tid, {
+            "status": "done", "finished_ts": time.time(),
+            "result": (result or "")[-8000:], "files": files,
+            "progress": ""}) == 0:
+        # Oppgaven var flagget avbrutt, men arbeidet ble fullført likevel.
+        # Nettopp dette skjedde med b065 og b12f – det skal stå svart på
+        # hvitt i dokumentet, ikke skjules bak en pen 'cancelled'.
+        _finish_completed_despite_cancel(task, result, files)
+        return
+    detail_id = None
+    if result:
+        full = result
+        if len(full) > MAX_DETAIL_CHARS:
+            full = full[:MAX_DETAIL_CHARS] + (
+                "\n\n[... avkortet, %d tegn totalt ...]" % len(result))
+        detail_id = memory.add_detail(
+            f"Agentresultat: {task['title']} [{tid}]", full, source="agent")
+    payload = {"task_id": str(tid),
+               "resultat": (result or "")[:RESULTAT_CHARS],
+               "filer": files[:30]}
+    if detail_id:
+        payload["detalj_id"] = str(detail_id)
+    lev_sti, lev_tekst = _leveranse_utdrag(result)
+    if lev_tekst:
+        payload["leveranse_fil"] = lev_sti
+        payload["leveranse_utdrag"] = lev_tekst
+    db.log_event("agent_done", f"Agent ferdig: {task['title']}",
+                 payload, priority=2)
+
+
 def run_task(task):
     tid = task["_id"]
     workdir = _workdir(tid)
@@ -206,35 +287,7 @@ def run_task(task):
         else:
             result = _run_claude_agent(task, workdir, model)
             files = _list_files(workdir)
-        if db.update_task_if_active(tid, {
-                "status": "done", "finished_ts": time.time(),
-                "result": (result or "")[-8000:], "files": files,
-                "progress": ""}) == 0:
-            # Oppgaven var flagget avbrutt, men arbeidet ble fullført likevel.
-            # Nettopp dette skjedde med b065 og b12f – det skal stå svart på
-            # hvitt i dokumentet, ikke skjules bak en pen 'cancelled'.
-            _finish_completed_despite_cancel(task, result, files)
-            return
-        detail_id = None
-        if result:
-            full = result
-            if len(full) > MAX_DETAIL_CHARS:
-                full = full[:MAX_DETAIL_CHARS] + (
-                    "\n\n[... avkortet, %d tegn totalt ...]" % len(result))
-            detail_id = memory.add_detail(
-                f"Agentresultat: {task['title']} [{tid}]", full, source="agent")
-        payload = {"task_id": str(tid),
-                   "resultat": (result or "")[:RESULTAT_CHARS],
-                   "filer": files[:30]}
-        if detail_id:
-            payload["detalj_id"] = str(detail_id)
-        lev_sti, lev_tekst = _leveranse_utdrag(result)
-        if lev_tekst:
-            payload["leveranse_fil"] = lev_sti
-            payload["leveranse_utdrag"] = lev_tekst
-        db.log_event("agent_done",
-                     f"Agent ferdig: {task['title']}",
-                     payload, priority=2)
+        _deliver(task, result, files)
     except Exception as e:
         if db.update_task_if_active(tid, {
                 "status": "failed", "finished_ts": time.time(),
@@ -264,12 +317,15 @@ def _finish_completed_despite_cancel(task, result, files):
             "detail": "prosessen rakk å fullføre arbeidet før/til tross for "
                       "avbruddet – resultatet er beholdt",
             "signals": [], "ts": time.time()}
-    db.db().agent_tasks.update_one({"_id": tid}, {
-        "$set": {"status": "cancel_failed", "finished_ts": time.time(),
-                 "result": "AVBRUTT, MEN ARBEIDET BLE LIKEVEL FULLFØRT:\n\n" +
-                           (result or "")[-7000:],
-                 "files": files, "progress": ""},
-        "$push": {"cancel_log": note}})
+    # Compare-and-set: korriger gjerne en 'cancelled' som kanselleringssveipet
+    # rakk å skrive samtidig (den ville løyet om at arbeidet ble stanset), men
+    # rør aldri en oppgave som alt står som done/failed/cancel_failed.
+    if not db.finish_completed_despite_cancel(tid, {
+            "status": "cancel_failed", "finished_ts": time.time(),
+            "result": "AVBRUTT, MEN ARBEIDET BLE LIKEVEL FULLFØRT:\n\n" +
+                      (result or "")[-7000:],
+            "files": files, "progress": ""}, note):
+        return
     db.log_event("agent_cancel_failed",
                  "Avbrutt agent fullførte likevel: %s – slutt-tilstanden på "
                  "systemet må verifiseres." % task.get("title", ""),
@@ -329,7 +385,17 @@ def _enforce_cancel(task):
         return
 
     status = "cancelled" if kill.get("verified_dead") else "cancel_failed"
-    db.record_cancel_outcome(tid, kill, status)
+    written, current = db.record_cancel_outcome(tid, kill, status)
+    if not written:
+        # Arbeidet ble ferdig i vinduet mellom drapsforsøket og skrivingen.
+        # Statusen som står, er sann – vi skal ikke male 'cancelled' over den.
+        db.log_event("agent_cancel_too_late",
+                     "Avbrudd kom for sent for %s: oppgaven var allerede "
+                     "'%s' – statusen står uendret." % (task.get("title", ""),
+                                                        current),
+                     {"task_id": str(tid), "kill": kill, "status": current},
+                     priority=2)
+        return
     db.log_event("agent_cancelled" if status == "cancelled"
                  else "agent_cancel_failed",
                  "Avbrutt (%s): %s – %s" % (status, task.get("title", ""),
@@ -362,15 +428,82 @@ def enforce_cancellations():
                          name=f"cancel-{tid}").start()
 
 
+def _attach_orphan(task):
+    """Følg en agent som overlevde daemon-restarten i sin egen scope.
+
+    Agenten kjører videre, men tråden som ventet på den døde med forrige
+    daemon-generasjon. Vi venter på at prosessen skal bli ferdig, leser svaret
+    fra .mind_run/claude_stdout.json (derfor skriver vi til fil og ikke rør)
+    og leverer det på helt vanlig måte. Uten dette ville arbeidet blitt utført
+    uten at noen hentet det inn – oppgaven ville stått som 'running' for evig.
+    """
+    tid = task["_id"]
+    p = task.get("process") or {}
+    workdir = task.get("workdir") or _workdir(tid)
+    try:
+        # Tidsavbruddet lå i communicate() i tråden som døde – her må vi
+        # håndheve det selv, ellers kunne en hengende agent leve for evig.
+        deadline = (p.get("started_ts") or time.time()) + AGENT_TIMEOUT_S
+        while procctl.pid_alive(p.get("pid"), p.get("starttime")):
+            if time.time() > deadline:
+                kill = procctl.kill_group(p.get("pid"), p.get("pgid"),
+                                          p.get("starttime"))
+                raise RuntimeError(
+                    "foreldreløs agent passerte tidsavbruddet på %d s – %s"
+                    % (AGENT_TIMEOUT_S, procctl.summarize(kill)))
+            time.sleep(ORPHAN_POLL_S)
+        out = _read_text(os.path.join(workdir, RUNDIR, "claude_stdout.json")).strip()
+        if not out:
+            raise RuntimeError(
+                "agenten overlevde restarten, men etterlot ingen utdata i "
+                "%s/%s – resultatet er tapt" % (RUNDIR, "claude_stdout.json"))
+        result = (json.loads(out) or {}).get("result", "")
+        _deliver(task, result, _list_files(workdir))
+    except Exception as e:
+        if db.update_task_if_active(tid, {
+                "status": "failed", "finished_ts": time.time(),
+                "result": f"FEILET (foreldreløs agent): {e}",
+                "progress": ""}) == 0:
+            db.update_task(tid, {"thread_finished_ts": time.time(),
+                                 "result": f"AVBRUTT: {e}"})
+            return
+        db.log_event("agent_failed",
+                     f"Foreldreløs agent feilet: {task['title']} – {e}",
+                     {"task_id": str(tid)}, priority=2)
+    finally:
+        with _lock:
+            _active.pop(str(tid), None)
+
+
 def requeue_orphans():
     """Etter daemon-restart: oppgaver som sto som 'running' uten levende tråd
     legges tilbake i køen (tilstanden gjenopptas fra MongoDB, §2).
 
+    Med systemd-scopes overlever agentprosessene restarten. En slik oppgave
+    skal IKKE re-køes – da ville vi startet oppdraget en gang til parallelt
+    med agenten som allerede utfører det (to git-pusher, to tjenesteomstarter
+    …). Lever prosessen, kobler vi oss på den i stedet.
+
     Flaggede oppgaver gjenopplives aldri – de går til kanselleringssveipet,
     som verifiserer at prosessen er borte og skriver slutt-status."""
-    db.db().agent_tasks.update_many(
-        {"status": "running", "cancel_requested": {"$ne": True}},
-        {"$set": {"status": "queued", "progress": "re-køet etter restart"}})
+    for t in db.db().agent_tasks.find({"status": "running",
+                                       "cancel_requested": {"$ne": True}}):
+        p = t.get("process") or {}
+        if p.get("pid") and procctl.pid_alive(p.get("pid"), p.get("starttime")):
+            db.update_task(t["_id"], {
+                "progress": "kjører videre i egen scope etter daemon-restart"})
+            th = threading.Thread(target=_attach_orphan, args=(t,), daemon=True,
+                                  name=f"orphan-{t['_id']}")
+            with _lock:
+                _active[str(t["_id"])] = th
+            th.start()
+            db.log_event("agent_survived_restart",
+                         "Agent overlevde daemon-restarten og jobber videre: "
+                         "%s (pid %s)" % (t.get("title", ""), p.get("pid")),
+                         {"task_id": str(t["_id"])}, priority=3)
+            continue
+        db.update_task(t["_id"], {"status": "queued",
+                                  "progress": "re-køet etter restart"})
 
 
 def manager_loop(stop_event):

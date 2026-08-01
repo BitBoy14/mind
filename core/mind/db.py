@@ -18,7 +18,7 @@ etter restart uten tap (§2). Samlinger:
 """
 import time
 
-from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo import MongoClient, ASCENDING, DESCENDING, ReturnDocument
 
 from . import config
 
@@ -256,25 +256,74 @@ def update_task_if_active(task_id, patch):
 
 
 def record_cancel_outcome(task_id, kill_info, status, result=None):
-    """Skriv det VERIFISERTE utfallet av en kansellering.
+    """Skriv det VERIFISERTE utfallet av en kansellering – med compare-and-set.
 
     status er 'cancelled' kun når kill_info bekrefter at prosessen er død;
     ellers 'cancel_failed'. Hele kill_info lagres, så dokumentet alltid
     forklarer hvorfor statusen ble som den ble.
+
+    Statusfilteret er ikke pynt. Uten det var dette en åpen TOCTOU-luke:
+    arbeidertråden kunne rekke å skrive 'done' i sekundene mellom
+    drapsforsøket og denne skrivingen, og kanselleringen malte deretter
+    'cancelled' over ferdig arbeid. Skrivingen gjelder derfor kun så lenge
+    oppgaven fortsatt står i en avbrytbar tilstand – en terminal status
+    (done/failed/cancel_failed) skal ALDRI overskrives i etterkant.
+
+    Returnerer (skrevet, status_naa): skrevet=False betyr at oppgaven alt
+    hadde en terminal status; kill_info legges da bare i cancel_log som
+    revisjonsspor, med applied=False.
     """
     patch = {"status": status, "cancel_kill": kill_info,
              "cancel_enforced_ts": time.time(), "finished_ts": time.time(),
              "progress": ""}
     if result is not None:
         patch["result"] = result
-    db().agent_tasks.update_one({"_id": task_id},
-                                {"$set": patch, "$push": {"cancel_log": kill_info}})
+    doc = db().agent_tasks.find_one_and_update(
+        {"_id": task_id, "status": {"$in": CANCEL_PENDING_STATUSES}},
+        {"$set": patch, "$push": {"cancel_log": kill_info}},
+        return_document=ReturnDocument.AFTER)
+    if doc is not None:
+        return True, doc.get("status")
+    late = dict(kill_info, applied=False,
+                detail="avbruddet kom for sent: oppgaven hadde allerede en "
+                       "terminal status – den beholdes uendret. "
+                       + str(kill_info.get("detail", "")))
+    doc = db().agent_tasks.find_one_and_update(
+        {"_id": task_id}, {"$push": {"cancel_log": late}},
+        return_document=ReturnDocument.AFTER)
+    return False, (doc or {}).get("status")
+
+
+def finish_completed_despite_cancel(task_id, patch, note):
+    """Avbrutt oppgave som likevel kjørte ferdig – med compare-and-set.
+
+    Motsatt vei av record_cancel_outcome: her ER arbeidet fullført, og
+    dokumentet skal si det. Vi tillater derfor å korrigere en 'cancelled'
+    som et samtidig kanselleringssveip rakk å skrive (den ville vært en
+    ren løgn), men rører aldri en oppgave som allerede står som
+    done/failed/cancel_failed.
+
+    Returnerer True hvis korreksjonen ble skrevet.
+    """
+    doc = db().agent_tasks.find_one_and_update(
+        {"_id": task_id,
+         "status": {"$in": CANCEL_PENDING_STATUSES + ["cancelled"]}},
+        {"$set": patch, "$push": {"cancel_log": note}},
+        return_document=ReturnDocument.AFTER)
+    return doc is not None
 
 
 def note_cancel_progress(task_id, kill_info, progress):
-    """Mellomtilstand: avbrudd er bestilt, men ikke ferdig verifisert."""
-    db().agent_tasks.update_one({"_id": task_id}, {"$set": {
-        "cancel_kill": kill_info, "progress": progress}})
+    """Mellomtilstand: avbrudd er bestilt, men ikke ferdig verifisert.
+
+    Samme statusfilter som over: rekker oppgaven å bli ferdig mens vi venter
+    på verifikasjon, skal ingen 'venter på …'-tekst legge seg oppå det
+    ferdige dokumentet.
+    """
+    r = db().agent_tasks.update_one(
+        {"_id": task_id, "status": {"$in": CANCEL_PENDING_STATUSES}},
+        {"$set": {"cancel_kill": kill_info, "progress": progress}})
+    return r.matched_count > 0
 
 
 # ------------------------------------------------------------------ prompts

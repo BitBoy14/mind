@@ -7,7 +7,7 @@ import time
 
 from bson import ObjectId
 
-from . import brain, config, db, jarvis_link, memory, prompts
+from . import brain, config, db, jarvis_link, knowledge, memory, prompts
 
 
 # Payload-felter som BÆRER innholdet fra en agentleveranse. De rendres som
@@ -65,6 +65,27 @@ def _render_agent_status():
     return "\n".join(lines)
 
 
+def _render_knowledge(query, working_note):
+    """Semantisk oppslag i eget minne, destillert til prompten.
+
+    Minneseksjonene velges på nøkkelord; kunnskapsmotoren finner i tillegg det
+    som LIGNER på situasjonen – gamle agentleveranser, arkiverte lærdommer,
+    detaljminner – også når ordene er andre.
+
+    Fail-open i to lag: knowledge.distill() kaster aldri og har hardt
+    tidsavbrudd, og her fanges alt som måtte gjenstå. Uten kunnskap kjører
+    syklusen nøyaktig som før.
+    """
+    try:
+        txt = knowledge.distill((working_note or "") + "\n" + (query or ""))
+    except Exception:
+        return ""
+    if not txt:
+        return ""
+    return ("KUNNSKAPSOPPSLAG (semantisk søk i eget minne – utdrag, ikke "
+            "fulltekst; hent hele dokumentet ved behov via id-en):\n" + txt)
+
+
 def _render_pending_proposals():
     props = db.pending_proposals()
     if not props:
@@ -106,6 +127,9 @@ def _build_call(kind, events):
         "SISTE CHAT:\n" + _render_chat_tail(),
         _render_agent_status(),
     ]
+    kb_txt = _render_knowledge(query, state.get("working_note"))
+    if kb_txt:
+        parts.append(kb_txt)
     pending = _render_pending_proposals()
     if pending:
         parts.append(pending)
