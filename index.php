@@ -114,10 +114,11 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
 #login { max-width:340px; margin:16vh auto; text-align:center; }
 #login input { width:100%; margin:12px 0; text-align:center; }
 
-/* ======================= mobil (telefon, ≤640px) =======================
+/* ======================= mobil (telefon, ≤768px) =======================
    Ren responsivitet: layout, trykkmål og lesbarhet. Ørkentemaets farger,
-   rammer og typografi er uendret, og ingenting her treffer skrivebordet. */
-@media (max-width:640px){
+   rammer og typografi er uendret, og ingenting her treffer skrivebordet.
+   768px er felles mobilgrense for hele fila – se app-modus nederst. */
+@media (max-width:768px){
 
   /* Topplinjen brytes over flere rader på telefon og la den ta ~20 % av
      skjermen i all evighet. Den scroller heller bort her; innholdet er
@@ -187,13 +188,13 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
   #login { margin:9vh auto; padding:0 18px; max-width:100%; }
 }
 
-/* Berøringsskjermer BREDERE enn 640px falt mellom stolene: nettbrett i
+/* Berøringsskjermer BREDERE enn mobilgrensen falt mellom stolene: nettbrett i
    portrett, store telefoner i landskap, og telefoner der brukeren har slått på
    «Be om skrivebordsversjon» (da blåses layoutbredden opp til ~980px). De fikk
    skrivebordets 27px-knapper og 13px-skrift på en skjerm som betjenes med
    tommelen. pointer:coarse treffer kun berøring – en mus matcher aldri, så
    skrivebordet er uberørt. */
-@media (min-width:641px) and (max-width:1000px) and (pointer:coarse){
+@media (min-width:769px) and (max-width:1000px) and (pointer:coarse){
   #grid { grid-template-columns:1fr; }
   #chatpanel { order:-1; grid-column:auto; }
   button { min-height:44px; padding:9px 14px; font-size:14px; }
@@ -217,6 +218,130 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
   #chatpanel .panel { height:82vh; height:calc(100dvh - 20px); }
   .panel .body { max-height:60vh; }
   .modal { max-height:96dvh; }
+}
+
+/* ================== MOBIL V2: app-modus (telefon, ≤768px) ==================
+   På telefon er dashbordet ikke lenger ett langt dokument, men en app: en
+   fast app-linje øverst, en skuffemeny til venstre, og ÉN seksjon om gangen
+   som fyller skjermen. Chat er standardvisningen.
+
+   Alt her ligger inne i @media (max-width:768px) – de tre elementene under
+   er den eneste nye regelen utenfor, og den skjuler dem på skrivebordet.
+   Skrivebordsvisningen er dermed bit for bit uendret. */
+#appbar, #scrim, #drawer { display:none; }
+
+@media (max-width:768px){
+
+  /* Topplinjen med sine ni kontroller er erstattet av app-linje + skuff. */
+  #topbar { display:none; }
+  /* data-msec settes kun av JS på innlogget side, så innloggingsskjermen
+     beholder sin egen sentrering. */
+  body[data-msec] { padding-top:56px; overflow-x:hidden; }
+
+  /* ---------- app-linje ---------- */
+  #appbar { display:flex; align-items:center; gap:6px;
+    position:fixed; top:0; left:0; right:0; height:56px; z-index:70;
+    padding:0 4px; background:var(--panel); border-bottom:1px solid var(--border); }
+  #appbar button { min-height:44px; }
+  #hambtn, #apprun { width:46px; padding:0; display:flex; align-items:center;
+    justify-content:center; position:relative; }
+  #hambtn { background:transparent; border:none; color:var(--text); }
+  #hambtn:hover { border:none; }
+  /* Uleste forslag må nå fram selv om brukeren står i chatten. */
+  #hambdg { display:none; position:absolute; top:6px; right:6px;
+    min-width:16px; height:16px; line-height:16px; border-radius:8px;
+    background:var(--red); color:#fff; font-size:10px; font-weight:700;
+    text-align:center; padding:0 3px; }
+  #appttl { flex:1; min-width:0; line-height:1.15; }
+  #appttl b { font-size:17px; }
+  #appttl span { display:block; font-size:11.5px; color:var(--dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #apppulse { flex:0 0 auto; padding-right:2px; }
+  #apppulse .pulse-dot { margin:0; }
+
+  /* ---------- skuff ---------- */
+  #scrim { display:block; position:fixed; inset:0; z-index:80;
+    background:rgba(62,47,28,.5); opacity:0; pointer-events:none;
+    transition:opacity .26s ease; }
+  body.drawer-open #scrim { opacity:1; pointer-events:auto; }
+  #drawer { display:flex; flex-direction:column;
+    position:fixed; top:0; bottom:0; left:0; width:min(84vw,320px); z-index:90;
+    background:var(--panel); border-right:1px solid var(--border);
+    box-shadow:2px 0 18px rgba(62,47,28,.3); overscroll-behavior:contain;
+    transform:translateX(-102%);
+    transition:transform .26s cubic-bezier(.22,.61,.36,1); }
+  body.drawer-open #drawer { transform:translateX(0); }
+  #drawer .dtop { display:flex; align-items:center; gap:8px;
+    padding:6px 6px 6px 16px; border-bottom:1px solid var(--border); }
+  #drawer .dtop .logo { flex:1; font-size:19px; font-weight:700; letter-spacing:3px; }
+  #drawer .dtop button { width:46px; padding:0; background:transparent;
+    border:none; color:var(--dim); font-size:19px; }
+  #dnav { flex:1; overflow-y:auto; padding:8px; }
+  .dnav-item { display:flex; align-items:center; gap:12px; width:100%;
+    min-height:52px; margin-bottom:2px; padding:0 12px; font-size:16px;
+    text-align:left; background:transparent; border:1px solid transparent;
+    border-radius:9px; color:var(--text); }
+  .dnav-item .lbl { flex:1; }
+  .dnav-item .cnt { font-size:12px; color:var(--dim); }
+  .dnav-item .badge { font-size:11px; }
+  .dnav-item.on { background:var(--panel2); border-color:var(--accent);
+    color:var(--accent-text); font-weight:600; }
+  .dfoot { border-top:1px solid var(--border); padding:8px;
+    display:flex; flex-wrap:wrap; gap:6px; }
+  .dfoot button { flex:1 1 44%; min-height:48px; }
+  .dfoot .tokline { flex:1 1 100%; text-align:left; font-size:11.5px;
+    padding:4px 4px 0; }
+
+  /* ---------- én seksjon om gangen, i fullskjerm ---------- */
+  #grid { display:block; padding:0; gap:0; }
+  #adminband { margin:0; }
+  /* .mon settes av mGo() på seksjonen som er valgt – alle andre er borte. */
+  .msec { display:none; }
+  .msec.mon { display:block; }
+
+  /* Rammen går kant til kant; kun panelets .body scroller, slik at
+     app-linjen står stille (dokumentet selv scroller ikke).
+     To former må treffes: seksjoner der .msec er selve panelet (Nå,
+     Tankestrøm, Agenter, Minnet) og seksjoner der .msec er en beholder
+     rundt panelet (#chatpanel, #adminband). */
+  body[data-msec] :is(.mon > .panel, .panel.mon) {
+    display:flex; flex-direction:column; height:calc(100dvh - 56px);
+    margin:0; border:none; border-radius:0; }
+  /* Seksjonsnavnet står allerede i app-linjen. */
+  body[data-msec] :is(.mon > .panel, .panel.mon) > h2 { display:none; }
+  body[data-msec] :is(.mon > .panel, .panel.mon) > .body {
+    flex:1; max-height:none; padding:12px 14px 22px; }
+  body[data-msec="admin"] #adminband:empty::after {
+    content:'Ingen forslag venter på godkjenning.';
+    display:block; padding:34px 20px; text-align:center;
+    color:var(--dim); font-size:14px; }
+
+  /* Chatten som meldingsapp: boblene fyller flaten, skrivefeltet er en
+     avrundet komponerelinje nederst. */
+  body[data-msec] #chatpanel > .panel { height:calc(100dvh - 56px); }
+  body[data-msec="chat"] #chatlog { padding:12px 10px; gap:8px; }
+  body[data-msec="chat"] #chatform { padding:8px; gap:8px; align-items:flex-end; }
+  body[data-msec="chat"] #chatinput {
+    height:48px; max-height:120px; border-radius:22px; padding:12px 16px;
+    font-family:inherit; }
+  body[data-msec="chat"] #chatform button { border-radius:22px; min-width:70px; }
+
+  /* Mindre tekst i blikket: lange fritekstblokker klippes til fem linjer
+     og folder seg ut ved trykk. Chatbobler er aldri klippet. */
+  .mclamp { display:-webkit-box; -webkit-line-clamp:5; line-clamp:5;
+    -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
+  .mclamp.mopen { display:block; -webkit-line-clamp:unset; line-clamp:unset; }
+
+  /* Trykkmål ≥44px også i 641–768-båndet, som før falt utenfor. */
+  button { min-height:44px; padding:9px 14px; font-size:14px; }
+  input:not([type=radio]):not([type=checkbox]), select, textarea {
+    min-height:44px; padding:9px 11px; font-size:16px; }
+  .item span.clicky { display:inline-block; padding:9px 2px; }
+}
+
+/* Brukere som har bedt om mindre bevegelse skal ikke få skuffen til å gli. */
+@media (prefers-reduced-motion:reduce){
+  #drawer, #scrim { transition:none; }
 }
 </style>
 </head>
@@ -242,6 +367,34 @@ async function doLogin(){
 </script>
 <?php else: ?>
 
+<!-- App-linje, mørklegging og skuffemeny: skjult på skrivebord (se CSS),
+     og eneste inngang til navigasjonen på telefon. -->
+<div id="appbar">
+  <button id="hambtn" onclick="mDrawer(true)" aria-label="Åpne meny"
+          aria-expanded="false" aria-controls="drawer">
+    <svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+    <span id="hambdg"></span>
+  </button>
+  <div id="appttl"><b id="appttl_t">Chat</b><span id="appttl_s"></span></div>
+  <span id="apppulse"><span class="pulse-dot"></span></span>
+  <button id="apprun" onclick="toggleRunning()" aria-label="Start eller pause">…</button>
+</div>
+<div id="scrim" onclick="mDrawer(false)"></div>
+<nav id="drawer" aria-label="Seksjoner" aria-hidden="true">
+  <div class="dtop">
+    <span class="logo">MIND</span>
+    <button onclick="mDrawer(false)" aria-label="Lukk meny">✕</button>
+  </div>
+  <div id="dnav"></div>
+  <div class="dfoot">
+    <button id="djarvisbtn" onclick="toggleJarvis()">Jarvis</button>
+    <button onclick="mDrawer(false);openSettings()">Innstillinger</button>
+    <button onclick="doLogout()">Logg ut</button>
+    <button onclick="resetTokens()" title="Nullstill token-teller">↺ Tokens</button>
+    <div class="tokline" id="dtok"></div>
+  </div>
+</nav>
+
 <div id="topbar">
   <span class="logo">MIND</span>
   <span id="pulseinfo"><span class="pulse-dot"></span><span class="muted">venter …</span></span>
@@ -260,30 +413,30 @@ async function doLogin(){
   <button onclick="doLogout()">Logg ut</button>
 </div>
 
-<div id="adminband"></div>
+<div id="adminband" class="msec" data-sec="admin"></div>
 
 <div id="grid">
   <div>
-    <div class="panel">
+    <div class="panel msec" data-sec="now">
       <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg> Nå <span class="muted" id="cyclets"></span></h2>
       <div class="body" id="nowbody"></div>
     </div>
-    <div class="panel">
+    <div class="panel msec" data-sec="thoughts">
       <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9c2.5 0 2.5 3 5 3s2.5-3 5-3 2.5 3 5 3 2.5-3 5-3"/><path d="M3 17c2.5 0 2.5 3 5 3s2.5-3 5-3 2.5 3 5 3 2.5-3 5-3"/></svg> Tankestrøm</h2>
       <div class="body" id="thoughtsbody"></div>
     </div>
   </div>
   <div>
-    <div class="panel">
+    <div class="panel msec" data-sec="agents">
       <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3.5h6a1 1 0 0 1 1 1V6H8V4.5a1 1 0 0 1 1-1z"/><path d="M8.5 13l2.2 2.2L15.5 11"/></svg> Agenter og oppgaver</h2>
       <div class="body" id="agentsbody"></div>
     </div>
-    <div class="panel">
+    <div class="panel msec" data-sec="memory">
       <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5.8A3 3 0 0 0 8 17a3 3 0 0 0 3 3V7a3 3 0 0 0-2-3z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5.8A3 3 0 0 1 16 17a3 3 0 0 1-3 3V7a3 3 0 0 1 2-3z"/></svg> Minnet</h2>
       <div class="body" id="membody"></div>
     </div>
   </div>
-  <div id="chatpanel">
+  <div id="chatpanel" class="msec" data-sec="chat">
     <div class="panel">
       <h2>Chat <span class="muted">(/clear tømmer konteksten)</span></h2>
       <div id="chatlog"></div>
@@ -311,6 +464,13 @@ const ICO = {
   play: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 4l14 8-14 8V4z"/></svg>',
   pause: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
   bolt: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-14h-8l1-6z"/></svg>',
+  // brukt av skuffemenyen på telefon (samme motiv som panelenes overskrifter)
+  clock: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+  stream: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9c2.5 0 2.5 3 5 3s2.5-3 5-3 2.5 3 5 3 2.5-3 5-3"/><path d="M3 17c2.5 0 2.5 3 5 3s2.5-3 5-3 2.5 3 5 3 2.5-3 5-3"/></svg>',
+  tasks: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3.5h6a1 1 0 0 1 1 1V6H8V4.5a1 1 0 0 1 1-1z"/><path d="M8.5 13l2.2 2.2L15.5 11"/></svg>',
+  brain: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5.8A3 3 0 0 0 8 17a3 3 0 0 0 3 3V7a3 3 0 0 0-2-3z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5.8A3 3 0 0 1 16 17a3 3 0 0 1-3 3V7a3 3 0 0 1 2-3z"/></svg>',
+  chat: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  wrench18: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
 };
 let S = null;            // siste state
 const cache = {};        // render-cache per seksjon
@@ -395,6 +555,7 @@ function draw(){
   document.getElementById('stagnbadge').style.display = st.stagnation ? '' : 'none';
 
   drawAdmin(); drawNow(); drawThoughts(); drawAgents(); drawMemory(); drawChat();
+  drawMobile();
 }
 
 function drawAdmin(){
@@ -404,7 +565,7 @@ function drawAdmin(){
     p.map(x => `
       <div class="item">
         <span class="kindtag">${esc(x.kind)}</span> <b>${esc(x.title)}</b>
-        <div class="muted" style="white-space:pre-wrap">${esc(x.body)}</div>
+        <div class="muted mclamp" style="white-space:pre-wrap">${esc(x.body)}</div>
         ${x.payload && x.payload.prompt_tekst ? `<details><summary class="muted clicky">ny prompttekst</summary><pre class="doc">${esc(x.payload.prompt_tekst)}</pre></details>` : ''}
         <div style="margin-top:6px">
           <button class="primary" onclick="decide('${x._id}',true)">Godkjenn</button>
@@ -423,12 +584,12 @@ function drawNow(){
   render('nowbody', [st.working_note, st.stagnation, res, cyc], `
     ${st.stagnation ? '<div class="stagn">Hjernen melder ærlig tomgang: ingen reell fremdrift å simulere akkurat nå.</div>' : ''}
     <div class="item"><b>Hva jeg holder på med:</b>
-      <div style="white-space:pre-wrap">${esc(st.working_note || '(ingenting notert ennå)')}</div></div>
+      <div class="mclamp" style="white-space:pre-wrap">${esc(st.working_note || '(ingenting notert ennå)')}</div></div>
     ${res ? `<div class="item muted">Server: disk ${res.disk_pct?.toFixed(0)}% · RAM ${res.mem_pct?.toFixed(0)}% · load ${res.load?.toFixed(1)}</div>` : ''}
     ${cyc.map(c => `
       <div class="item">
         <span class="kindtag">${esc(c.kind)}</span><span class="ts">${ago(c.ts)}</span>
-        <div style="white-space:pre-wrap">${esc(c.observations || '')}</div>
+        <div class="mclamp" style="white-space:pre-wrap">${esc(c.observations || '')}</div>
         ${(c.decisions||[]).length ? `<div class="muted">→ ${(c.decisions||[]).map(esc).join(' · ')}</div>` : ''}
       </div>`).join('') || '<div class="muted">Ingen sykluser ennå.</div>'}`);
 }
@@ -438,7 +599,7 @@ function drawThoughts(){
   render('thoughtsbody', th, th.map(x => `
     <div class="item">
       <span class="kindtag">${esc(x.kind)}</span><span class="ts">${ago(x.ts)}</span>
-      <div style="white-space:pre-wrap">${esc(x.text)}</div>
+      <div class="mclamp" style="white-space:pre-wrap">${esc(x.text)}</div>
       ${(x.comments||[]).map(c => `<div class="muted" style="margin-left:14px">${ICO.comment} ${esc(c.text)} <span class="ts">${ago(c.ts)}</span></div>`).join('')}
       <span class="muted clicky" onclick="commentThought('${x._id}')">${ICO.comment} Kommentér</span>
     </div>`).join('') || '<div class="muted">Tankestrømmen er tom – hjernen har ikke tenkt høyt ennå.</div>');
@@ -453,7 +614,7 @@ function drawAgents(){
       <span class="kindtag">${esc(t.type)}</span>
       <span class="ts">${esc(t.status)}${dur !== null ? ' · ' + dur + ' min' : ''} · ${ago(t.finished_ts || t.started_ts || t.created_ts)}</span>
       ${t.progress ? `<div class="muted">${esc(t.progress)}</div>` : ''}
-      ${t.result ? `<div class="muted" style="white-space:pre-wrap">${esc(String(t.result).slice(0,300))}</div>` : ''}
+      ${t.result ? `<div class="muted mclamp" style="white-space:pre-wrap">${esc(String(t.result).slice(0,300))}</div>` : ''}
       ${t.cancel_kill ? `<div class="muted">avbrudd: ${esc(t.cancel_kill.result || '')} – ${esc(t.cancel_kill.detail || '')}</div>` : ''}
       <span class="muted clicky" onclick="openTask('${t._id}')">${ICO.folder} detaljer/filer</span>
       ${['queued','running','cancelling'].includes(t.status)
@@ -663,6 +824,141 @@ async function saveSettings(){
   await api(payload);
   closeModal(); poll();
 }
+
+// =================== mobil-app: skuffemeny + én seksjon ===================
+// Alt her er inert på skrivebord: CSS-en som gir app-linje, skuff og
+// «vis kun én seksjon» ligger i @media (max-width:768px), så selv om
+// data-msec settes uansett, endres ingenting over 768px.
+const MOBQ = window.matchMedia('(max-width:768px)');
+const MSECS = [
+  {id:'chat',     label:'Chat',        icon:ICO.chat},
+  {id:'now',      label:'Nå',          icon:ICO.clock},
+  {id:'thoughts', label:'Tankestrøm',  icon:ICO.stream},
+  {id:'agents',   label:'Agenter',     icon:ICO.tasks},
+  {id:'memory',   label:'Minnet',      icon:ICO.brain},
+  {id:'admin',    label:'Godkjenning', icon:ICO.wrench18},
+];
+let mSec = 'chat';   // chat er standardvisningen
+
+function mBuildNav(){
+  document.getElementById('dnav').innerHTML = MSECS.map(s =>
+    `<button class="dnav-item" data-go="${s.id}" onclick="mGo('${s.id}')">
+       ${s.icon}<span class="lbl">${s.label}</span>
+       <span class="cnt" data-cnt="${s.id}"></span></button>`).join('');
+}
+
+function mGo(sec){
+  if (!MSECS.some(s => s.id === sec)) sec = 'chat';
+  mSec = sec;
+  document.body.dataset.msec = sec;
+  document.querySelectorAll('.msec').forEach(e =>
+    e.classList.toggle('mon', e.dataset.sec === sec));
+  document.querySelectorAll('#dnav .dnav-item').forEach(b =>
+    b.classList.toggle('on', b.dataset.go === sec));
+  const s = MSECS.find(x => x.id === sec);
+  document.getElementById('appttl_t').textContent = s.label;
+  mDrawer(false);
+  mSub();
+  // Ny seksjon skal alltid starte på toppen; chatten på siste melding.
+  if (sec === 'chat') {
+    const log = document.getElementById('chatlog');
+    if (log) log.scrollTop = log.scrollHeight;
+  } else {
+    const b = document.querySelector(`[data-sec="${sec}"] .body`);
+    if (b) b.scrollTop = 0;
+  }
+}
+
+function mDrawer(open){
+  document.body.classList.toggle('drawer-open', !!open);
+  document.getElementById('drawer').setAttribute('aria-hidden', open ? 'false' : 'true');
+  document.getElementById('hambtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+// Undertittelen i app-linjen bærer det ene tallet seksjonen faktisk trenger,
+// slik at panelenes overskriftsrad kan skjules helt.
+function mSub(){
+  const el = document.getElementById('appttl_s');
+  if (!S) { el.textContent = ''; return; }
+  const st = S.state, a = S.agents, m = S.memory;
+  let t = '';
+  if (mSec === 'chat')          t = st.daemon_alive ? 'puls ' + ago(st.last_pulse_ts) : 'daemon svarer ikke';
+  else if (mSec === 'now')      t = st.last_cycle_ts ? 'siste syklus ' + ago(st.last_cycle_ts) : 'ingen sykluser ennå';
+  else if (mSec === 'thoughts') t = S.thoughts.length + ' tanker';
+  else if (mSec === 'agents')   t = a.running.length + ' kjører · ' + a.queued.length + ' i kø';
+  else if (mSec === 'memory')   t = Math.round(100 * m.total_tokens / m.max_tokens) + '% av minnet brukt';
+  else if (mSec === 'admin')    t = S.admin.pending.length + ' venter på svar';
+  el.textContent = t;
+}
+
+function drawMobile(){
+  const st = S.state, se = S.settings, a = S.agents, t = S.tokens;
+  const pend = S.admin.pending.length;
+
+  document.querySelector('#apppulse .pulse-dot').className =
+    'pulse-dot' + (st.daemon_alive ? ' alive' : '');
+  const ar = document.getElementById('apprun');
+  ar.innerHTML = se.running ? ICO.pause : ICO.play;
+  ar.title = se.running ? 'Pause' : 'Start';
+  ar.className = se.running ? '' : 'primary';
+
+  const hb = document.getElementById('hambdg');
+  hb.style.display = pend ? 'block' : 'none';
+  hb.textContent = pend;
+
+  const cnt = (sec, html) => {
+    const el = document.querySelector(`#dnav [data-cnt="${sec}"]`);
+    if (el) el.innerHTML = html;
+  };
+  cnt('thoughts', S.thoughts.length || '');
+  cnt('agents', a.running.length ? `<span class="badge" style="background:var(--amber)">${a.running.length}</span>` : '');
+  cnt('memory', Math.round(100 * S.memory.total_tokens / S.memory.max_tokens) + '%');
+  cnt('admin', pend ? `<span class="badge">${pend}</span>` : '');
+  cnt('now', st.stagnation ? '<span class="badge" style="background:var(--amber)">!</span>' : '');
+
+  document.getElementById('djarvisbtn').textContent = 'Jarvis: ' + (se.jarvis_link ? 'PÅ' : 'AV');
+  document.getElementById('dtok').innerHTML =
+    `↑ ${fmtN(t.input)} · ↓ ${fmtN(t.output)} · cache ${fmtN(t.cache_read)}`;
+  mSub();
+}
+
+// Klipte fritekstblokker folder seg ut ved trykk (kun på telefon).
+document.addEventListener('click', e => {
+  if (!MOBQ.matches) return;
+  const c = e.target.closest('.mclamp');
+  if (c) c.classList.toggle('mopen');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('drawer-open')) mDrawer(false);
+});
+// Skuffen skal aldri henge igjen hvis vinduet vokser forbi mobilgrensen.
+MOBQ.addEventListener('change', e => { if (!e.matches) mDrawer(false); });
+
+// Kantsveip: dra inn fra venstre kant for å åpne, dra skuffen mot venstre
+// for å lukke. Kun vannrette drag teller, så loddrett scrolling er urørt.
+(function(){
+  let x0 = null, y0 = null, wasOpen = false;
+  addEventListener('touchstart', e => {
+    x0 = null;
+    if (!MOBQ.matches || e.touches.length !== 1) return;
+    const t = e.touches[0], open = document.body.classList.contains('drawer-open');
+    if (!open && t.clientX > 24) return;          // åpning: kun fra kanten
+    if (open && !e.target.closest('#drawer')) return;
+    x0 = t.clientX; y0 = t.clientY; wasOpen = open;
+  }, {passive:true});
+  addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = Math.abs(t.clientY - y0);
+    if (Math.abs(dx) > 55 && Math.abs(dx) > dy) {
+      if (!wasOpen && dx > 0) mDrawer(true);
+      else if (wasOpen && dx < 0) mDrawer(false);
+    }
+    x0 = null;
+  }, {passive:true});
+})();
+
+mBuildNav();
+mGo('chat');
 
 poll();
 setInterval(poll, 2500);
