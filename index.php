@@ -10,18 +10,19 @@ $authed = is_authed();
 <title>MIND – hovedhjernen</title>
 <style>
 :root {
-  --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --border:#2b3442;
-  --text:#dbe3ee; --dim:#8b98a9; --accent:#6ea8fe; --green:#3fb970;
-  --red:#e5534b; --amber:#d9a127; --purple:#b18af8;
+  --bg:#E8DCC4; --panel:#F4ECDA; --panel2:#E4D5B0; --border:#8F754A;
+  --text:#3E2F1C; --dim:#7A5C3E; --accent:#B85C38; --accent-text:#8B3E22; --green:#5F7A3D;
+  --red:#9C3A29; --amber:#8A5A18; --amber-dark:#6E4610; --purple:#7A4A6E;
 }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--text);
   font:14px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif; }
-a { color:var(--accent); text-decoration:none; }
+a { color:var(--accent-text); text-decoration:none; }
+svg.ic { vertical-align:-2px; flex-shrink:0; }
 button { background:var(--panel2); color:var(--text); border:1px solid var(--border);
   border-radius:6px; padding:5px 11px; cursor:pointer; font-size:13px; }
 button:hover { border-color:var(--accent); }
-button.primary { background:var(--accent); color:#0d1117; border-color:var(--accent); font-weight:600; }
+button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
 button.danger { border-color:var(--red); color:var(--red); }
 input,select,textarea { background:var(--panel2); color:var(--text);
   border:1px solid var(--border); border-radius:6px; padding:6px 9px; font-size:13px; }
@@ -50,8 +51,8 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 .panel h2 { margin:0; padding:9px 14px; font-size:13px; text-transform:uppercase;
   letter-spacing:1px; color:var(--dim); border-bottom:1px solid var(--border);
   display:flex; align-items:center; gap:8px; }
-#grid > div:not(#chatpanel) > .panel > h2 { background:#e9edf3; color:#1c2330; }
-#grid > div:not(#chatpanel) > .panel > h2 .muted { color:#5a6472; }
+#grid > div:not(#chatpanel) > .panel > h2 { background:#F8F0DC; color:var(--text); }
+#grid > div:not(#chatpanel) > .panel > h2 .muted { color:#6B5636; }
 .panel .body { padding:10px 14px; max-height:460px; overflow-y:auto; }
 .item { border-bottom:1px solid var(--border); padding:8px 0; }
 .item:last-child { border-bottom:none; }
@@ -63,8 +64,8 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 .meter { height:9px; background:var(--panel2); border-radius:5px; overflow:hidden; margin:6px 0; }
 .meter > div { height:100%; background:var(--accent); }
 .tabs { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
-.tabs button.active { border-color:var(--accent); color:var(--accent); }
-.stagn { background:#3a2b12; border:1px solid var(--amber); color:var(--amber);
+.tabs button.active { border-color:var(--accent); color:var(--accent-text); }
+.stagn { background:#F2D9A8; border:1px solid var(--amber); color:var(--amber-dark);
   padding:7px 10px; border-radius:7px; margin-bottom:8px; font-size:13px; }
 
 #adminband { margin:12px 16px 0; }
@@ -75,16 +76,16 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 #chatpanel .panel { display:flex; flex-direction:column; height:calc(100vh - 90px); margin-bottom:0; }
 #chatlog { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
 .msg { max-width:88%; padding:7px 11px; border-radius:10px; white-space:pre-wrap; word-break:break-word; }
-.msg.user { align-self:flex-end; background:#264a77; }
+.msg.user { align-self:flex-end; background:var(--accent); color:#fff; }
 .msg.responder { align-self:flex-start; background:var(--panel2); }
-.msg.brain { align-self:flex-start; background:#2c2440; border:1px solid var(--purple); }
+.msg.brain { align-self:flex-start; background:#EAD9E2; border:1px solid var(--purple); }
 .msg.system { align-self:center; background:transparent; color:var(--dim); font-size:12px; }
 .msg .who { font-size:10px; color:var(--dim); margin-bottom:2px; }
 #chatform { display:flex; gap:8px; padding:10px; border-top:1px solid var(--border); }
 #chatinput { flex:1; resize:none; height:60px; }
 
 /* modal */
-.modal-back { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100;
+.modal-back { position:fixed; inset:0; background:rgba(62,47,28,.55); z-index:100;
   display:none; align-items:center; justify-content:center; padding:20px; }
 .modal-back.open { display:flex; }
 .modal { background:var(--panel); border:1px solid var(--border); border-radius:12px;
@@ -95,7 +96,7 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 pre.doc { background:var(--panel2); border:1px solid var(--border); border-radius:8px;
   padding:12px; white-space:pre-wrap; word-break:break-word; font-size:12.5px; max-height:55vh; overflow:auto; }
 .clicky { cursor:pointer; }
-.clicky:hover { color:var(--accent); }
+.clicky:hover { color:var(--accent-text); }
 
 #login { max-width:340px; margin:16vh auto; text-align:center; }
 #login input { width:100%; margin:12px 0; text-align:center; }
@@ -129,12 +130,15 @@ async function doLogin(){
   <button id="runbtn" onclick="toggleRunning()">…</button>
   <button onclick="toggleJarvis()" id="jarvisbtn">Jarvis: ?</button>
   <span id="adminbadge" style="display:none" class="clicky" onclick="scrollToAdmin()">
-    🛠 <span class="badge" id="admincount">0</span></span>
-  <span id="stagnbadge" style="display:none" title="Hjernen har flagget stagnasjon">⚠️ tomgang</span>
+    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+    <span class="badge" id="admincount">0</span></span>
+  <span id="stagnbadge" style="display:none" title="Hjernen har flagget stagnasjon">
+    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2 20h20L12 3.5z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+    tomgang</span>
   <span class="spacer"></span>
   <span class="tokline" id="tokline">tokens …</span>
   <button title="Nullstill token-teller" onclick="resetTokens()">↺</button>
-  <button onclick="openSettings()">⚙ Innstillinger</button>
+  <button onclick="openSettings()"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.97 7.97 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.9 3h-4l-.4 2.9a8 8 0 0 0-1.7 1l-2.5-1-2 3.4L6.4 11a7.97 7.97 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.9h4l.4-2.9a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13z"/></svg> Innstillinger</button>
   <button onclick="doLogout()">Logg ut</button>
 </div>
 
@@ -143,21 +147,21 @@ async function doLogin(){
 <div id="grid">
   <div>
     <div class="panel">
-      <h2>Nå <span class="muted" id="cyclets"></span></h2>
+      <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg> Nå <span class="muted" id="cyclets"></span></h2>
       <div class="body" id="nowbody"></div>
     </div>
     <div class="panel">
-      <h2>Tankestrøm</h2>
+      <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9c2.5 0 2.5 3 5 3s2.5-3 5-3 2.5 3 5 3 2.5-3 5-3"/><path d="M3 17c2.5 0 2.5 3 5 3s2.5-3 5-3 2.5 3 5 3 2.5-3 5-3"/></svg> Tankestrøm</h2>
       <div class="body" id="thoughtsbody"></div>
     </div>
   </div>
   <div>
     <div class="panel">
-      <h2>Agenter og oppgaver</h2>
+      <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3.5h6a1 1 0 0 1 1 1V6H8V4.5a1 1 0 0 1 1-1z"/><path d="M8.5 13l2.2 2.2L15.5 11"/></svg> Agenter og oppgaver</h2>
       <div class="body" id="agentsbody"></div>
     </div>
     <div class="panel">
-      <h2>Minnet</h2>
+      <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5.8A3 3 0 0 0 8 17a3 3 0 0 0 3 3V7a3 3 0 0 0-2-3z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5.8A3 3 0 0 1 16 17a3 3 0 0 1-3 3V7a3 3 0 0 1 2-3z"/></svg> Minnet</h2>
       <div class="body" id="membody"></div>
     </div>
   </div>
@@ -179,6 +183,17 @@ async function doLogin(){
 </div>
 
 <script>
+const ICO = {
+  wrench: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  gear: '<svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.97 7.97 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.9 3h-4l-.4 2.9a8 8 0 0 0-1.7 1l-2.5-1-2 3.4L6.4 11a7.97 7.97 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.9h4l.4-2.9a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13z"/></svg>',
+  comment: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  folder: '<svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>',
+  thought: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15a4 4 0 1 1 .4-8 5 5 0 0 1 9.6 1.6A3.5 3.5 0 0 1 17 15H7z"/><circle cx="7" cy="19" r="1"/><circle cx="10.5" cy="21" r="0.8"/></svg>',
+  file: '<svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+  play: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 4l14 8-14 8V4z"/></svg>',
+  pause: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
+  bolt: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-14h-8l1-6z"/></svg>',
+};
 let S = null;            // siste state
 const cache = {};        // render-cache per seksjon
 const esc = s => String(s ?? '').replace(/[&<>"']/g,
@@ -227,12 +242,12 @@ function draw(){
                                  : 'daemon svarer ikke'}</span>`;
   const run = se.running;
   const rb = document.getElementById('runbtn');
-  rb.textContent = run ? '⏸ Pause' : '▶ Start';
+  rb.innerHTML = run ? ICO.pause + ' Pause' : ICO.play + ' Start';
   rb.className = run ? '' : 'primary';
   document.getElementById('jarvisbtn').textContent = 'Jarvis: ' + (se.jarvis_link ? 'PÅ' : 'AV');
   const t = S.tokens;
   document.getElementById('tokline').innerHTML =
-    `↑ inn ${fmtN(t.input)} · ↓ ut ${fmtN(t.output)}<br>⚡ cache ${fmtN(t.cache_read)} lest / ${fmtN(t.cache_creation)} skrevet`;
+    `↑ inn ${fmtN(t.input)} · ↓ ut ${fmtN(t.output)}<br>${ICO.bolt} cache ${fmtN(t.cache_read)} lest / ${fmtN(t.cache_creation)} skrevet`;
   const pend = S.admin.pending.length;
   document.getElementById('adminbadge').style.display = pend ? '' : 'none';
   document.getElementById('admincount').textContent = pend;
@@ -244,7 +259,7 @@ function draw(){
 function drawAdmin(){
   const p = S.admin.pending;
   render('adminband', p, !p.length ? '' : `
-    <div class="panel"><h2>🛠 Forslag til godkjenning (${p.length})</h2><div class="body">` +
+    <div class="panel"><h2>${ICO.wrench} Forslag til godkjenning (${p.length})</h2><div class="body">` +
     p.map(x => `
       <div class="item">
         <span class="kindtag">${esc(x.kind)}</span> <b>${esc(x.title)}</b>
@@ -283,8 +298,8 @@ function drawThoughts(){
     <div class="item">
       <span class="kindtag">${esc(x.kind)}</span><span class="ts">${ago(x.ts)}</span>
       <div style="white-space:pre-wrap">${esc(x.text)}</div>
-      ${(x.comments||[]).map(c => `<div class="muted" style="margin-left:14px">💬 ${esc(c.text)} <span class="ts">${ago(c.ts)}</span></div>`).join('')}
-      <span class="muted clicky" onclick="commentThought('${x._id}')">💬 Kommentér</span>
+      ${(x.comments||[]).map(c => `<div class="muted" style="margin-left:14px">${ICO.comment} ${esc(c.text)} <span class="ts">${ago(c.ts)}</span></div>`).join('')}
+      <span class="muted clicky" onclick="commentThought('${x._id}')">${ICO.comment} Kommentér</span>
     </div>`).join('') || '<div class="muted">Tankestrømmen er tom – hjernen har ikke tenkt høyt ennå.</div>');
 }
 
@@ -298,7 +313,7 @@ function drawAgents(){
       <span class="ts">${esc(t.status)}${dur !== null ? ' · ' + dur + ' min' : ''} · ${ago(t.finished_ts || t.started_ts || t.created_ts)}</span>
       ${t.progress ? `<div class="muted">${esc(t.progress)}</div>` : ''}
       ${t.result ? `<div class="muted" style="white-space:pre-wrap">${esc(String(t.result).slice(0,300))}</div>` : ''}
-      <span class="muted clicky" onclick="openTask('${t._id}')">📁 detaljer/filer</span>
+      <span class="muted clicky" onclick="openTask('${t._id}')">${ICO.folder} detaljer/filer</span>
     </div>`;
   };
   render('agentsbody', a,
@@ -370,9 +385,10 @@ function drawChat(){
   const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
   log.innerHTML = S.chat.map(m => {
     const cls = {user:'user', responder:'responder', brain:'brain', system:'system'}[m.role] || 'system';
-    const who = m.role === 'brain' ? (m.marker || '💭 Hovedhjernen')
-              : m.role === 'responder' ? 'MIND' : '';
-    return `<div class="msg ${cls}">${who ? `<div class="who">${esc(who)}</div>` : ''}${esc(m.text)}</div>`;
+    const whoIcon = m.role === 'brain' ? ICO.thought : '';
+    const whoText = m.role === 'brain' ? (m.marker || 'Hovedhjernen')
+                  : m.role === 'responder' ? 'MIND' : '';
+    return `<div class="msg ${cls}">${whoText ? `<div class="who">${whoIcon} ${esc(whoText)}</div>` : ''}${esc(m.text)}</div>`;
   }).join('') || '<div class="msg system">Chatten er tom. Si hei!</div>';
   if (nearBottom || chatCount === -1) log.scrollTop = log.scrollHeight;
   chatCount = S.chat.length;
@@ -442,7 +458,7 @@ async function openTask(id){
     ${j.result ? `<details open><summary class="muted clicky">Resultat</summary><pre class="doc">${esc(j.result)}</pre></details>` : ''}
     <p><b>Filer:</b></p>
     <div>${(j.files||[]).map(f =>
-      `<div class="clicky" onclick="openFile('${id}','${esc(f)}')">📄 ${esc(f)}</div>`).join('')
+      `<div class="clicky" onclick="openFile('${id}','${esc(f)}')">${ICO.file} ${esc(f)}</div>`).join('')
       || '<span class="muted">ingen filer</span>'}</div>
     <p><button onclick="closeModal()">Lukk</button></p>`);
 }
@@ -450,7 +466,7 @@ async function openTask(id){
 async function openFile(task, path){
   const j = await api({action:'read_file', task, path});
   if (!j.ok) return;
-  openModal(`<h3>📄 ${esc(path)}</h3><pre class="doc">${esc(j.content)}</pre>
+  openModal(`<h3>${ICO.file} ${esc(path)}</h3><pre class="doc">${esc(j.content)}</pre>
     <button onclick="closeModal()">Lukk</button>`);
 }
 
@@ -458,7 +474,7 @@ function openSettings(){
   const se = S.settings;
   const opts = sel => S.models.map(m =>
     `<option value="${esc(m)}" ${m===sel?'selected':''}>${esc(m)}</option>`).join('');
-  openModal(`<h3>⚙ Innstillinger</h3>
+  openModal(`<h3>${ICO.gear} Innstillinger</h3>
     <div class="formrow"><label>Motor</label>
       <label style="width:auto"><input type="radio" name="engine" value="api" ${se.engine==='api'?'checked':''}> A: Anthropic API</label>
       <label style="width:auto"><input type="radio" name="engine" value="claude_code" ${se.engine==='claude_code'?'checked':''}> B: Claude Code headless</label>
