@@ -29,6 +29,13 @@ button { background:var(--panel2); color:var(--text); border:1px solid var(--bor
 button:hover { border-color:var(--accent); }
 button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
 button.danger { border-color:var(--red); color:var(--red); }
+/* Innsiktssiden er et eget dokument, ikke en modal i enside-appen, så den må
+   være en ekte <a> for å kunne navigeres til. Den skal likevel se ut og
+   oppføre seg som knappene den står blant. */
+a.knappelenke { display:inline-flex; align-items:center; gap:5px;
+  background:var(--panel2); color:var(--text); border:1px solid var(--border);
+  border-radius:6px; padding:5px 11px; font-size:13px; text-decoration:none; }
+a.knappelenke:hover { border-color:var(--accent); }
 input,select,textarea { background:var(--panel2); color:var(--text);
   border:1px solid var(--border); border-radius:6px; padding:6px 9px; font-size:13px; }
 input:focus,textarea:focus { outline:none; border-color:var(--accent); }
@@ -288,7 +295,8 @@ pre.doc { background:var(--panel2); border:1px solid var(--border); border-radiu
     color:var(--accent-text); font-weight:600; }
   .dfoot { border-top:1px solid var(--border); padding:8px;
     display:flex; flex-wrap:wrap; gap:6px; }
-  .dfoot button { flex:1 1 44%; min-height:48px; }
+  .dfoot button, .dfoot a.knappelenke { flex:1 1 44%; min-height:48px; }
+  .dfoot a.knappelenke { justify-content:center; }
   .dfoot .tokline { flex:1 1 100%; text-align:left; font-size:11.5px;
     padding:4px 4px 0; }
 
@@ -388,6 +396,7 @@ async function doLogin(){
   <div id="dnav"></div>
   <div class="dfoot">
     <button id="djarvisbtn" onclick="toggleJarvis()">Jarvis</button>
+    <a class="knappelenke" href="innsikt.php">Innsikt</a>
     <button onclick="mDrawer(false);openSettings()">Innstillinger</button>
     <button onclick="doLogout()">Logg ut</button>
     <button onclick="resetTokens()" title="Nullstill token-teller">↺ Tokens</button>
@@ -409,6 +418,7 @@ async function doLogin(){
   <span class="spacer"></span>
   <span class="tokline" id="tokline">tokens …</span>
   <button title="Nullstill token-teller" onclick="resetTokens()">↺</button>
+  <a class="knappelenke" href="innsikt.php" title="Tanker, godkjenninger og tokenøkonomi – lesende, koster ingen tokens"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17v-5"/><path d="M13 17V8"/><path d="M18 17V5"/></svg> <span class="btxt">Innsikt</span></a>
   <button onclick="openSettings()"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.97 7.97 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.9 3h-4l-.4 2.9a8 8 0 0 0-1.7 1l-2.5-1-2 3.4L6.4 11a7.97 7.97 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.9h4l.4-2.9a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13z"/></svg> <span class="btxt">Innstillinger</span></button>
   <button onclick="doLogout()">Logg ut</button>
 </div>
