@@ -168,6 +168,29 @@ def log_tokens(role, engine, model, usage, purpose, ms):
     })
 
 
+def tokens_used_today():
+    """Ut-tokens brukt siden midnatt lokal tid.
+
+    Ut-tokens er målet fordi det er dem som koster mest og som skiller en
+    tenkende syklus fra et billig oppslag. Inn-tokens domineres av cache-
+    lesninger til en tiendedels pris og ville gjort tallet misvisende.
+    """
+    import datetime as _dt
+    midnatt = _dt.datetime.combine(_dt.date.today(), _dt.time.min).timestamp()
+    r = list(db().tokens.aggregate([
+        {"$match": {"ts": {"$gte": midnatt}}},
+        {"$group": {"_id": None, "ut": {"$sum": "$output"}}},
+    ]))
+    return int(r[0]["ut"]) if r else 0
+
+
+def budget_state():
+    """(brukt, budsjett, tom) for døgnet. budsjett 0 = ingen brems."""
+    budsjett = int(get_settings().get("daily_token_budget", 0) or 0)
+    brukt = tokens_used_today()
+    return brukt, budsjett, (budsjett > 0 and brukt >= budsjett)
+
+
 # ------------------------------------------------------------------ chat
 
 def add_chat(role, text, marker=None):
@@ -216,10 +239,18 @@ def add_thought(text, kind="tanke", refs=None):
 CANCEL_PENDING_STATUSES = ["queued", "running", "cancelling"]
 
 
-def create_agent_task(title, brief, task_type="bygg", priority=3, created_by="brain"):
+def create_agent_task(title, brief, task_type="bygg", priority=3,
+                      created_by="brain", status="queued", selfinit=False):
+    """Opprett en agentoppgave.
+
+    status='avventer_ja' parkerer oppgaven til brukeren godkjenner den;
+    agent-manageren plukker bare 'queued'. selfinit merker at hjernen fant på
+    oppgaven selv, slik at dashbordet kan skille den fra en bestilling.
+    """
     doc = {"created_ts": time.time(), "title": title, "brief": brief,
-           "type": task_type, "priority": priority, "status": "queued",
-           "created_by": created_by, "started_ts": None, "finished_ts": None,
+           "type": task_type, "priority": priority, "status": status,
+           "created_by": created_by, "selfinit": selfinit,
+           "started_ts": None, "finished_ts": None,
            "result": None, "assessment": None, "files": [], "progress": "",
            "cancel_requested": False, "process": None}
     r = db().agent_tasks.insert_one(doc)

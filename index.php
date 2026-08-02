@@ -547,8 +547,20 @@ function draw(){
                  (se.jarvis_link ? 'PÅ' : 'AV');
   jb.title = 'Jarvis-kobling: ' + (se.jarvis_link ? 'på' : 'av');
   const t = S.tokens;
+  const b = S.budget || {};
+  // Døgnbudsjettet vises som en linje til, ikke som eget panel: det er tallet
+  // man vil se i forbifarten, ved siden av totalforbruket.
+  let budsjettlinje = '';
+  if (b.limit > 0) {
+    const pct = Math.min(100, Math.round(100 * b.used / b.limit));
+    const farge = b.exhausted ? 'var(--red)' : pct >= 75 ? 'var(--amber)' : 'var(--green)';
+    budsjettlinje =
+      `<br><span style="color:${farge}">i dag ${fmtN(b.used)} / ${fmtN(b.limit)}` +
+      (b.exhausted ? ' · budsjett brukt opp' : ` (${pct} %)`) + '</span>';
+  }
   document.getElementById('tokline').innerHTML =
-    `↑ inn ${fmtN(t.input)} · ↓ ut ${fmtN(t.output)}<br>${ICO.bolt} cache ${fmtN(t.cache_read)} lest / ${fmtN(t.cache_creation)} skrevet`;
+    `↑ inn ${fmtN(t.input)} · ↓ ut ${fmtN(t.output)}<br>${ICO.bolt} cache ${fmtN(t.cache_read)} lest / ${fmtN(t.cache_creation)} skrevet` +
+    budsjettlinje;
   const pend = S.admin.pending.length;
   document.getElementById('adminbadge').style.display = pend ? '' : 'none';
   document.getElementById('admincount').textContent = pend;
@@ -621,10 +633,33 @@ function drawAgents(){
         ? ` <span class="muted clicky" onclick="cancelTask('${t._id}')">✕ avbryt</span>` : ''}
     </div>`;
   };
+  // Selvinitierte oppgaver som venter på ja. De står øverst fordi de er det
+  // eneste her som faktisk står stille i påvente av et menneske.
+  const venter = (a.avventer_ja || []).map(t => `
+    <div class="item" style="border-left:3px solid var(--amber); padding-left:9px">
+      <span class="kindtag">venter på deg</span> <b>${esc(t.title)}</b>
+      <span class="kindtag">${esc(t.type)}</span>
+      <span class="ts">${ago(t.created_ts)}</span>
+      <div style="margin-top:6px">
+        <button class="primary" onclick="decideTask('${t._id}',true)">Godkjenn</button>
+        <button class="danger" onclick="decideTask('${t._id}',false)">Avslå</button>
+        <span class="muted clicky" onclick="openTask('${t._id}')">${ICO.folder} se oppdraget</span>
+      </div>
+    </div>`).join('');
+
   render('agentsbody', a,
-    (a.running.length + a.queued.length + a.finished.length) === 0
+    (venter.length + a.running.length + a.queued.length + a.finished.length) === 0
       ? '<div class="muted">Ingen agentoppgaver ennå.</div>'
-      : a.running.map(row).join('') + a.queued.map(row).join('') + a.finished.map(row).join(''));
+      : venter + a.running.map(row).join('') + a.queued.map(row).join('') + a.finished.map(row).join(''));
+}
+
+async function decideTask(id, approve){
+  // Et avslag uten begrunnelse lærer hjernen ingenting om hvor grensen går.
+  const reason = approve
+    ? (prompt('Godkjenner. Kommentar til hjernen (valgfritt):') ?? '')
+    : (prompt('Avslår. Hvorfor? Dette er det hjernen lærer av:') ?? '');
+  await api({action:'task_decide', id, approve, reason});
+  poll();
 }
 
 let memTab = 'seksjoner';
@@ -803,6 +838,13 @@ function openSettings(){
       <input type="number" id="set_maxagents" value="${se.max_parallel_agents}" min="1" max="23" style="width:80px"></div>
     <div class="formrow"><label>Natt-økt (time)</label>
       <input type="number" id="set_night" value="${se.night_curation_hour}" min="0" max="23" style="width:80px"></div>
+    <div class="formrow"><label>Døgnbudsjett (ut-tokens)</label>
+      <input type="number" id="set_budget" value="${(S.budget && S.budget.limit) || 0}" min="0" step="50000" style="width:130px">
+      <span class="muted">0 = ingen brems. Stopper kun autonome økter; chat svarer alltid.</span></div>
+    <div class="formrow"><label>Selvinitiert arbeid</label>
+      <label style="width:auto"><input type="checkbox" id="set_approval"
+        ${(S.budget && S.budget.require_approval_selfinit) ? 'checked' : ''}>
+        må godkjennes før agenter starter</label></div>
     <p><button class="primary" onclick="saveSettings()">Lagre</button>
        <button onclick="api({action:'refresh_models'}).then(()=>{poll();closeModal();})">↻ Oppdater modelliste</button>
        <button onclick="closeModal()">Avbryt</button></p>`);
@@ -818,6 +860,8 @@ async function saveSettings(){
     pulse_model: document.getElementById('set_pulse').value,
     max_parallel_agents: document.getElementById('set_maxagents').value,
     night_curation_hour: document.getElementById('set_night').value,
+    daily_token_budget: document.getElementById('set_budget').value,
+    require_approval_selfinit: document.getElementById('set_approval').checked,
   };
   const key = document.getElementById('set_apikey').value.trim();
   if (key) payload.api_key = key;

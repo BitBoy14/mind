@@ -15,7 +15,7 @@ lagringen, og `_apply_result` kaller aldri modellen selv.
 import pytest
 from bson import ObjectId
 
-from mind import cycle, db
+from mind import config, cycle, db
 
 
 # ------------------------------------------------------------------ tomt/minimalt svar
@@ -154,18 +154,53 @@ def test_minne_ops_utfores_med_brain_som_aktor(fake_db):
 
 # ------------------------------------------------------------------ agentoppgaver
 
-def test_agentoppgave_opprettes_i_ko(fake_db):
-    beslutninger = cycle._apply_result(
-        {"agent_oppgaver": [{"tittel": "Bygg testsuite",
-                             "oppdrag": "Skriv pytest-tester",
-                             "type": "bygg", "prioritet": 1}]}, "normal")
+OPPGAVE = {"agent_oppgaver": [{"tittel": "Bygg testsuite",
+                               "oppdrag": "Skriv pytest-tester",
+                               "type": "bygg", "prioritet": 1}]}
+CHAT_HENDELSE = [{"type": "chat_msg", "text": "bygg en testsuite"}]
+
+
+def test_bestilt_agentoppgave_gaar_rett_i_ko(fake_db):
+    """Sprang oppgaven ut av noe brukeren sa, skal den starte uten å spørre."""
+    beslutninger = cycle._apply_result(OPPGAVE, "normal", CHAT_HENDELSE)
     (t,) = fake_db.agent_tasks.docs
     assert t["title"] == "Bygg testsuite"
     assert t["brief"] == "Skriv pytest-tester"
     assert t["priority"] == 1
     assert t["status"] == "queued"
     assert t["created_by"] == "brain"
+    assert t["selfinit"] is False
     assert beslutninger == ["opprettet agentoppgave 'Bygg testsuite'"]
+
+
+def test_selvinitiert_agentoppgave_venter_paa_godkjenning(fake_db):
+    """Uten en utløsende brukerhendelse er oppgaven hjernens eget påfunn."""
+    beslutninger = cycle._apply_result(OPPGAVE, "tanke", [])
+    (t,) = fake_db.agent_tasks.docs
+    assert t["status"] == "avventer_ja"
+    assert t["selfinit"] is True
+    assert beslutninger == [
+        "agentoppgave 'Bygg testsuite' venter på godkjenning (selvinitiert)"]
+
+
+def test_selvinitiert_gaar_rett_i_ko_naar_porten_er_av(fake_db):
+    fake_db.settings.docs[:] = []
+    s = dict(config.DEFAULT_SETTINGS)
+    s["require_approval_selfinit"] = False
+    fake_db.settings.docs.append(s)
+    cycle._apply_result(OPPGAVE, "tanke", [])
+    (t,) = fake_db.agent_tasks.docs
+    assert t["status"] == "queued"
+    assert t["selfinit"] is True
+
+
+def test_kommentar_og_admin_svar_teller_som_bestilling(fake_db):
+    """En kommentar på en tanke er også brukeren som ber om noe."""
+    assert cycle._bestilt_av_bruker([{"type": "comment"}]) is True
+    assert cycle._bestilt_av_bruker([{"type": "admin_decision"}]) is True
+    assert cycle._bestilt_av_bruker([{"type": "agent_done"}]) is False
+    assert cycle._bestilt_av_bruker([]) is False
+    assert cycle._bestilt_av_bruker(None) is False
 
 
 def test_agentoppgave_uten_felter_faar_defaults(fake_db):
@@ -297,7 +332,7 @@ def test_alle_deler_av_et_fullt_resultat_effektueres_i_rekkefolge(fake_db):
         "admin_forslag": [{"tittel": "F"}],
         "arbeidsnotat": "notat",
         "stagnasjon": False,
-    }, "normal")
+    }, "normal", CHAT_HENDELSE)
     assert beslutninger == [
         "1 tanker logget",
         "supplerte i chatten",

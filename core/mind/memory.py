@@ -37,21 +37,55 @@ def total_tokens():
 
 def build_index():
     """Kompakt innholdsfortegnelse over hele hovedminnet – alltid med i
-    arbeidsminnet. Holdes rundt INDEX_TARGET_TOKENS."""
-    lines = ["HOVEDMINNE-INDEKS (totalt %d tokens av maks %d):" %
-             (total_tokens(), config.MAIN_MEMORY_MAX_TOKENS)]
+    arbeidsminnet.
+
+    Indeksen ligger i den CACHEDE delen av kallet (system_blocks[1]), og
+    prompt-caching er en ren prefiks-match: endres ett tegn her, faller
+    cachen for alt som kommer etter – hver eneste gang.
+
+    Derfor står det ingen bruksstatistikk i denne strengen. `use_count`
+    inkrementeres hver gang en seksjon LESES, så en indeks som bar den var
+    ulik ved hvert kall og senket hovedhjernens cache-treffrate til 0,6 %
+    mot agentenes 96,5 % (målt 2026-08-02). Totalsummen er ute av samme
+    grunn: den endres hver gang en seksjon skrives.
+
+    Tallene er ikke tapt – kuratering trenger dem. De leveres av
+    build_usage_note() i den volatile delen av prompten, der de kan endre
+    seg fritt uten å koste noe.
+    """
+    lines = ["HOVEDMINNE-INDEKS:"]
     for s in all_sections():
         first = (s.get("content") or "").strip().splitlines()
         summary = (first[0][:120] if first else "")
-        lines.append("[%s] %s (viktighet %d, %d tok, brukt %dx) – %s" % (
+        lines.append("[%s] %s (viktighet %d) – %s" % (
             str(s["_id"]), s.get("title", "?"), s.get("importance", 5),
-            s.get("tokens", 0), s.get("use_count", 0), summary))
+            summary))
     idx = "\n".join(lines)
     # Nødbrems: kutt bakerste linjer om indeksen vokser seg for stor
     while est_tokens(idx) > config.INDEX_TARGET_TOKENS * 2 and lines[3:]:
         lines = lines[:-1]
         idx = "\n".join(lines) + "\n[... indeks avkortet – kuratering trengs]"
     return idx
+
+
+def build_usage_note():
+    """Bruksstatistikk for kuratering – hører hjemme i den VOLATILE delen.
+
+    Motstykket til build_index(): alt som endrer seg ofte samles her, slik at
+    indeksen over kan ligge urørt i cachen. Formelen i §4.4 er
+    viktighet × recency × bruksfrekvens, og de to siste leddene bor her.
+    """
+    now = time.time()
+    lines = ["MINNETS TILSTAND (størrelse og bruk – grunnlag for kuratering):",
+             "Hovedminnet bruker %d av maks %d tokens." %
+             (total_tokens(), config.MAIN_MEMORY_MAX_TOKENS)]
+    for s in all_sections():
+        sist = s.get("last_used_ts") or s.get("created_ts") or now
+        timer = max(0, (now - sist) / 3600.0)
+        lines.append("[%s] %s: %d tok, brukt %dx, sist lest for %.1f timer siden" % (
+            str(s["_id"]), s.get("title", "?"), s.get("tokens", 0),
+            s.get("use_count", 0), timer))
+    return "\n".join(lines)
 
 
 def get_sections(ids, mark_used=True):

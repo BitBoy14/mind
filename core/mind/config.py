@@ -57,6 +57,13 @@ DEFAULT_SETTINGS = {
     "chat_epoch": 0.0,                  # /clear setter denne til nå
     "max_parallel_agents": 8,
     "night_curation_hour": 3,           # daglig grundig kurateringsøkt
+    # Døgnbudsjett i ut-tokens (§3.3). 0 = ingen brems. Hjernen ser hvor mye
+    # den har igjen og styrer selv etter det; ved tomt budsjett stanses
+    # autonomt arbeid, mens chatten fortsatt svarer.
+    "daily_token_budget": 400_000,
+    # Agentoppgaver hjernen finner på selv må godkjennes før de kjører.
+    # Oppgaver som springer ut av noe brukeren ba om i chat, går rett gjennom.
+    "require_approval_selfinit": True,
 }
 
 # Minnehierarkiets rammer (§4)

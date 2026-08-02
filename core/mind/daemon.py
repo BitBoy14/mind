@@ -129,6 +129,26 @@ def heartbeat():
                 # stillhet: trapp ned rytmen
                 interval = _next_interval(interval)
 
+                # Døgnbudsjettet bremser bare det AUTONOME arbeidet. En syklus
+                # utløst av noe brukeren gjorde, og chatten, går alltid – det
+                # skal aldri virke som om hjernen er død fordi den har tenkt
+                # for mye på egen hånd.
+                brukt, budsjett, tomt = db.budget_state()
+                if tomt:
+                    if not state.get("budget_notified_day") == \
+                            datetime.date.today().isoformat():
+                        log.info("døgnbudsjett brukt opp (%d/%d) – autonome "
+                                 "økter pauses til midnatt", brukt, budsjett)
+                        db.log_event(
+                            "budget_exhausted",
+                            f"Døgnbudsjettet er brukt opp ({brukt:,} av "
+                            f"{budsjett:,} ut-tokens). Autonome tanke-økter og "
+                            "natt-økten står til midnatt; chatten svarer som "
+                            "vanlig.".replace(",", " "), priority=3)
+                        db.set_state({"budget_notified_day":
+                                      datetime.date.today().isoformat()})
+                    continue
+
                 # natt-økt: grundig kuratering én gang i døgnet
                 hour = datetime.datetime.now().hour
                 today = datetime.date.today().isoformat()

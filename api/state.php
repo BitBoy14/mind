@@ -25,12 +25,33 @@ $chat = array_reverse(mfind('chat', ['ts' => ['$gt' => $epoch]],
 
 $thoughts = mfind('thoughts', [], ['sort' => ['ts' => -1], 'limit' => 40]);
 
+// Døgnbudsjett: ut-tokens brukt siden midnatt lokal tid. Ut-tokens er målet
+// fordi de koster mest; inn-tokens domineres av cache-lesninger til 1/10 pris.
+$midnatt = (float)strtotime('today midnight');
+$dag = maggregate('tokens', [
+    ['$match' => ['ts' => ['$gte' => $midnatt]]],
+    ['$group' => ['_id' => null, 'ut' => ['$sum' => '$output']]],
+]);
+$brukt_i_dag = (int)($dag[0]['ut'] ?? 0);
+$budsjett = (int)($s['daily_token_budget'] ?? 0);
+$budget = [
+    'used' => $brukt_i_dag,
+    'limit' => $budsjett,
+    'exhausted' => $budsjett > 0 && $brukt_i_dag >= $budsjett,
+    'require_approval_selfinit' => (bool)($s['require_approval_selfinit'] ?? false),
+];
+
 $agents = [
     // 'cancelling' = avbrudd bestilt, men prosessen er ennå ikke bekreftet død.
     // Den hører hjemme blant de aktive helt til drapet er verifisert.
     'running' => mfind('agent_tasks', ['status' => ['$in' => ['running', 'cancelling']]],
         ['sort' => ['started_ts' => 1]]),
     'queued' => mfind('agent_tasks', ['status' => 'queued'], ['sort' => ['priority' => 1, 'created_ts' => 1]]),
+    // Selvinitierte oppgaver som venter på ja fra brukeren. De ligger først
+    // i dashbordet: en oppgave som venter på svar er det eneste her som
+    // faktisk står stille i påvente av et menneske.
+    'avventer_ja' => mfind('agent_tasks', ['status' => 'avventer_ja'],
+        ['sort' => ['priority' => 1, 'created_ts' => 1]]),
     'finished' => mfind('agent_tasks',
         ['status' => ['$in' => ['done', 'failed', 'cancelled', 'cancel_failed']]],
         ['sort' => ['finished_ts' => -1], 'limit' => 15]),
@@ -95,6 +116,7 @@ echo json_encode([
         'daemon_alive' => $alive,
     ],
     'tokens' => $tokens,
+    'budget' => $budget,
     'chat' => $chat,
     'thoughts' => $thoughts,
     'agents' => $agents,

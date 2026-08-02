@@ -97,6 +97,41 @@ def _render_pending_proposals():
     return "\n".join(lines)
 
 
+def _render_budget():
+    """Fortell hjernen hvor mye av døgnbudsjettet den har igjen.
+
+    Den skal kunne prioritere selv – vite at det er lite igjen er noe annet
+    enn å bli stanset uten forvarsel midt i en tanke.
+    """
+    brukt, budsjett, tom = db.budget_state()
+    if budsjett <= 0:
+        return "DØGNBUDSJETT: ingen brems satt."
+    igjen = max(0, budsjett - brukt)
+    pct = round(100 * brukt / budsjett)
+    linje = (f"DØGNBUDSJETT: {brukt:,} av {budsjett:,} ut-tokens brukt ({pct} %), "
+             f"{igjen:,} igjen.").replace(",", " ")
+    if tom:
+        linje += (" BUDSJETTET ER BRUKT OPP. Autonome tanke-økter er stanset "
+                  "til midnatt. Chatten svarer fortsatt. Bruk det som er igjen "
+                  "av denne syklusen på å notere hva du ville gjort, slik at "
+                  "du kan ta det opp igjen i morgen.")
+    elif pct >= 75:
+        linje += (" Under en firedel igjen – prioriter det som betyr mest, og "
+                  "utsett det som kan vente.")
+    return linje
+
+
+def _bestilt_av_bruker(events):
+    """Sprang denne syklusen ut av noe brukeren sa?
+
+    Skillet avgjør om nye agentoppgaver kan starte selv eller må godkjennes.
+    Det leses av hendelsene, ikke av hjernens egen merking: en regel den kan
+    omgå ved å kalle sitt eget påfunn en bestilling, er ingen regel.
+    """
+    return any(e.get("type") in ("chat_msg", "comment", "admin_decision")
+               for e in events or [])
+
+
 def _build_call(kind, events):
     """Bygg system-blokker (stabile først, for caching) og user-prompt."""
     identity = prompts.get("brain_identity") + "\n\n" + prompts.get("brain_cycle_contract")
@@ -126,6 +161,10 @@ def _build_call(kind, events):
         "NYE HENDELSER:\n" + _render_events(events),
         "SISTE CHAT:\n" + _render_chat_tail(),
         _render_agent_status(),
+        # Bruksstatistikken hører hjemme her, ikke i den cachede indeksen:
+        # den endres ved hver lesning og ville ellers rive cachen hvert kall.
+        memory.build_usage_note(),
+        _render_budget(),
     ]
     kb_txt = _render_knowledge(query, state.get("working_note"))
     if kb_txt:
@@ -153,9 +192,10 @@ def _build_call(kind, events):
     return [identity, index, sections_txt], user_prompt
 
 
-def _apply_result(res, kind):
+def _apply_result(res, kind, events=None):
     """Effektuer hovedhjernens beslutninger. Returnerer beslutningssammendrag."""
     decisions = []
+    bestilt = _bestilt_av_bruker(events)
 
     lagrede_tanker = 0
     for t in res.get("tanker") or []:
@@ -190,11 +230,19 @@ def _apply_result(res, kind):
         except (TypeError, ValueError):
             # «prioritet: høy» skal koste prioriteten, ikke hele effektueringen
             prioritet = 3
+        krev_ja = (db.get_settings().get("require_approval_selfinit", False)
+                   and not bestilt)
         t = db.create_agent_task(a.get("tittel", "Uten tittel"),
                                  a.get("oppdrag", ""),
                                  a.get("type", "bygg"),
-                                 prioritet)
-        decisions.append(f"opprettet agentoppgave '{t['title']}'")
+                                 prioritet,
+                                 status="avventer_ja" if krev_ja else "queued",
+                                 selfinit=not bestilt)
+        if krev_ja:
+            decisions.append(f"agentoppgave '{t['title']}' venter på godkjenning "
+                             "(selvinitiert)")
+        else:
+            decisions.append(f"opprettet agentoppgave '{t['title']}'")
 
     for tid in res.get("avbryt_oppgaver") or []:
         try:
@@ -254,7 +302,7 @@ def run_cycle(kind="normal"):
                                    purpose=f"syklus:{kind}:oppfolging",
                                    expect_json=True)
 
-    decisions = _apply_result(res, kind)
+    decisions = _apply_result(res, kind, events)
     db.mark_events_processed([e["_id"] for e in events])
     db.log_cycle(kind, res.get("observasjoner", ""), decisions)
     db.set_state({"last_cycle_ts": time.time(), "pulses_since_cycle": 0})
