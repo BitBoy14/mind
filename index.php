@@ -104,6 +104,34 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 #chatform { display:flex; gap:8px; padding:10px; border-top:1px solid var(--border); }
 #chatinput { flex:1; resize:none; height:60px; }
 
+/* dra-og-slipp i chatten */
+#chatpanel .panel { position:relative; }
+/* Overlegget ligger over hele chatpanelet, men er usynlig for musen: uten
+   pointer-events:none ville det selv stjålet drop-hendelsen det annonserer. */
+#chatdrop { position:absolute; inset:6px; z-index:6; display:none;
+  align-items:center; justify-content:center; pointer-events:none;
+  border:2px dashed var(--accent); border-radius:10px;
+  background:rgba(184,92,56,.12); color:var(--accent-text);
+  font-size:14px; font-weight:600; letter-spacing:.4px; }
+#chatpanel.dragover #chatdrop { display:flex; }
+#chattray { display:flex; flex-wrap:wrap; gap:6px; padding:8px 10px 0; }
+#chattray:empty { display:none; }
+.att { display:flex; align-items:center; gap:6px; max-width:220px;
+  background:var(--panel2); border:1px solid var(--border);
+  border-radius:8px; padding:4px 7px; font-size:12px; }
+.att img { width:34px; height:34px; object-fit:cover; border-radius:5px; display:block; }
+.att .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.att .x { cursor:pointer; color:var(--dim); font-weight:700; padding:0 2px; }
+.att .x:hover { color:var(--red); }
+/* vedlegg inne i en chatboble */
+.msg .atts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.msg .atts img { max-width:200px; max-height:160px; border-radius:7px; display:block; }
+.msg .atts .fil { display:inline-flex; align-items:center; gap:5px;
+  background:rgba(255,255,255,.22); border:1px solid rgba(255,255,255,.35);
+  border-radius:7px; padding:4px 8px; font-size:12px; color:inherit; }
+.msg.responder .atts .fil, .msg.brain .atts .fil {
+  background:var(--panel); border-color:var(--border); }
+
 /* modal */
 .modal-back { position:fixed; inset:0; background:rgba(62,47,28,.55); z-index:100;
   display:none; align-items:center; justify-content:center; padding:20px; }
@@ -449,9 +477,11 @@ async function doLogin(){
   <div id="chatpanel" class="msec" data-sec="chat">
     <div class="panel">
       <h2>Chat <span class="muted">(/clear tømmer konteksten)</span></h2>
+      <div id="chatdrop">Slipp filer eller tekst her</div>
       <div id="chatlog"></div>
+      <div id="chattray"></div>
       <div id="chatform">
-        <textarea id="chatinput" placeholder="Skriv til MIND …"
+        <textarea id="chatinput" placeholder="Skriv til MIND … (dra inn filer, eller lim inn et skjermbilde)"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
         <button class="primary" onclick="sendChat()">Send</button>
       </div>
@@ -481,6 +511,7 @@ const ICO = {
   brain: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5.8A3 3 0 0 0 8 17a3 3 0 0 0 3 3V7a3 3 0 0 0-2-3z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5.8A3 3 0 0 1 16 17a3 3 0 0 1-3 3V7a3 3 0 0 1 2-3z"/></svg>',
   chat: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
   wrench18: '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  clip: '<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.2 12.5 20.7a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 1 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg>',
 };
 let S = null;            // siste state
 const cache = {};        // render-cache per seksjon
@@ -726,6 +757,30 @@ async function memSearch(){
     || '<div class="muted">Ingen treff.</div>';
 }
 
+const fmtBytes = b => b < 1024 ? b + ' B'
+  : b < 1048576 ? Math.round(b / 1024) + ' KB'
+  : (b / 1048576).toFixed(1).replace('.', ',') + ' MB';
+
+/** Ett lagret vedlegg. Filene ligger utenfor webroot, så URL-en går alltid
+ *  gjennom vedlegg.php, som krever den samme innloggede sesjonen. */
+function attHtml(a){
+  const u = 'vedlegg.php?f=' + encodeURIComponent(a.path || '');
+  return (a.mime || '').startsWith('image/')
+    ? `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${esc(a.name)}" loading="lazy"></a>`
+    : `<a class="fil" href="${u}" target="_blank" rel="noopener">${ICO.clip} ${esc(a.name)} · ${fmtBytes(a.size || 0)}</a>`;
+}
+
+/** Teksten slik den skal SES i boblen.
+ *  «[Vedlegg: … → /var/lib/mind/uploads/…]»-linjene i meldingen er skrevet
+ *  for hovedhjernen, som bare ser tekst. I dashbordet tegnes de samme
+ *  vedleggene som miniatyrer rett under, så her ville linjene med den lange
+ *  serverstien bare vært støy. De blir stående urørt i databasen. */
+function chatTekst(m){
+  const t = m.text || '';
+  if (!(m.attachments || []).length) return t;
+  return t.replace(/^\[Vedlegg: .*\]$/gm, '').replace(/\n+$/, '');
+}
+
 let chatCount = -1;
 function drawChat(){
   const log = document.getElementById('chatlog');
@@ -738,15 +793,114 @@ function drawChat(){
     const whoIcon = m.role === 'brain' ? ICO.thought : '';
     const whoText = m.role === 'brain' ? (m.marker || 'Hovedhjernen')
                   : m.role === 'responder' ? 'MIND' : '';
-    return `<div class="msg ${cls}">${whoText ? `<div class="who">${whoIcon} ${esc(whoText)}</div>` : ''}${esc(m.text)}</div>`;
+    const atts = m.attachments || [];
+    return `<div class="msg ${cls}">${whoText ? `<div class="who">${whoIcon} ${esc(whoText)}</div>` : ''}${esc(chatTekst(m))}${
+      atts.length ? `<div class="atts">${atts.map(attHtml).join('')}</div>` : ''}</div>`;
   }).join('') || '<div class="msg system">Chatten er tom. Si hei!</div>';
   if (nearBottom || chatCount === -1) log.scrollTop = log.scrollHeight;
   chatCount = S.chat.length;
 }
 
+// ---------------------------------------------- vedlegg på vei ut (dra/lim inn)
+let pendingAtts = [];                 // {file, url} – url er objekt-URL for bilder
+const ATT_EXT = ['png','jpg','jpeg','gif','webp','pdf','txt','md','csv','json','log'];
+const ATT_MAX_BYTES = 15 * 1024 * 1024;
+const ATT_MAX = 8;
+
+function drawTray(){
+  const t = document.getElementById('chattray');
+  if (!t) return;
+  t.innerHTML = pendingAtts.map((a, i) => `<span class="att">${
+    a.url ? `<img src="${a.url}" alt="">` : ICO.clip}<span class="nm">${esc(a.file.name)}</span>` +
+    `<span class="muted">${fmtBytes(a.file.size)}</span>` +
+    `<span class="x" title="Fjern vedlegget" onclick="removeAtt(${i})">×</span></span>`).join('');
+}
+
+function removeAtt(i){
+  const a = pendingAtts.splice(i, 1)[0];
+  if (a && a.url) URL.revokeObjectURL(a.url);
+  drawTray();
+}
+
+/** Et bilde fra utklippstavlen kommer uten brukbart filnavn. Uten navn har
+ *  filen heller ingen utvidelse, og serveren har da ingenting å kjenne typen
+ *  på – så vi gir den ett før den legges i skuffen. */
+function normFile(f){
+  if (f.name && f.name.lastIndexOf('.') > 0) return f;
+  const ext = {'image/png':'png', 'image/jpeg':'jpg', 'image/gif':'gif',
+               'image/webp':'webp', 'application/pdf':'pdf'}[f.type];
+  if (!ext) return f;
+  return new File([f], 'utklipp-' + Date.now() + '.' + ext, {type: f.type});
+}
+
+/** Klientsjekken er høflighet, ikke sikkerhet: api/upload.php validerer alt på
+ *  nytt. Poenget er å si fra med én gang i stedet for etter opplastingen. */
+function addFiles(filer){
+  const avvist = [];
+  for (const f of filer) {
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (pendingAtts.length >= ATT_MAX)  { avvist.push(`${f.name} – maks ${ATT_MAX} vedlegg per melding`); continue; }
+    if (!ATT_EXT.includes(ext))         { avvist.push(`${f.name} – filtypen er ikke tillatt`); continue; }
+    if (f.size > ATT_MAX_BYTES)         { avvist.push(`${f.name} – ${fmtBytes(f.size)}, maks er 15 MB`); continue; }
+    pendingAtts.push({file: f, url: f.type.startsWith('image/') ? URL.createObjectURL(f) : null});
+  }
+  drawTray();
+  if (avvist.length) alert('Kunne ikke legge ved:\n' + avvist.join('\n'));
+}
+
+function settInnTekst(inp, tekst){
+  const a = inp.selectionStart ?? inp.value.length;
+  const b = inp.selectionEnd ?? a;
+  inp.value = inp.value.slice(0, a) + tekst + inp.value.slice(b);
+  inp.focus();
+  inp.setSelectionRange(a + tekst.length, a + tekst.length);
+}
+
+(function initChatDropp(){
+  const panel = document.getElementById('chatpanel');
+  const inp = document.getElementById('chatinput');
+  if (!panel || !inp) return;
+
+  // dragenter/dragleave fyres også når markøren krysser grensen til et BARN
+  // av panelet. Uten dybdetelleren blinker markeringen av og på mens man drar
+  // over chatloggen.
+  let dybde = 0;
+  const av = () => { dybde = 0; panel.classList.remove('dragover'); };
+  panel.addEventListener('dragenter', e => { e.preventDefault(); dybde++; panel.classList.add('dragover'); });
+  panel.addEventListener('dragover',  e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
+  panel.addEventListener('dragleave', () => { if (--dybde <= 0) av(); });
+  panel.addEventListener('drop', e => {
+    e.preventDefault(); av();
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    if (dt.files && dt.files.length) { addFiles([...dt.files].map(normFile)); return; }
+    const t = dt.getData('text/plain') || dt.getData('text/uri-list') || '';
+    if (t) settInnTekst(inp, t);
+  });
+
+  inp.addEventListener('paste', e => {
+    const filer = [...(e.clipboardData ? e.clipboardData.items : [])]
+      .filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean);
+    if (!filer.length) return;          // ren tekst limes inn som vanlig
+    e.preventDefault();
+    addFiles(filer.map(normFile));
+  });
+
+  // Bommer man på panelet, ville nettleseren ellers navigert fanen til filen –
+  // og da er både chatten og alt uskrevet borte.
+  ['dragover', 'drop'].forEach(n => window.addEventListener(n, e => {
+    if (!panel.contains(e.target)) e.preventDefault();
+  }));
+})();
+
 async function sendChat(){
   const inp = document.getElementById('chatinput');
   const text = inp.value.trim();
+  // /clear er en kommando, ikke en melding: den skal tømme konteksten, ikke
+  // laste opp det som tilfeldigvis lå i vedleggsskuffen først.
+  if (text === '/clear') { pendingAtts.forEach(a => a.url && URL.revokeObjectURL(a.url));
+                           pendingAtts = []; drawTray(); }
+  else if (pendingAtts.length) return sendChatMedVedlegg(text);
   if (!text) return;
   inp.value = '';
   if (text !== '/clear') {
@@ -757,6 +911,44 @@ async function sendChat(){
   }
   await api({action:'chat_send', text});
   poll();
+}
+
+/** Vedlegg kan ikke sendes som JSON, så denne veien går til api/upload.php,
+ *  som lagrer filene OG skriver chatmeldingen i én operasjon. */
+async function sendChatMedVedlegg(text){
+  const inp = document.getElementById('chatinput');
+  const sendes = pendingAtts;
+  const fd = new FormData();
+  fd.append('text', text);
+  sendes.forEach(a => fd.append('files[]', a.file, a.file.name));
+  pendingAtts = []; inp.value = ''; drawTray();
+
+  const log = document.getElementById('chatlog');
+  log.insertAdjacentHTML('beforeend',
+    `<div class="msg user">${esc(text)}<div class="atts">${sendes.map(a =>
+      a.url ? `<img src="${a.url}" alt="">`
+            : `<span class="fil">${ICO.clip} ${esc(a.file.name)}</span>`).join('')}</div></div>`);
+  log.scrollTop = log.scrollHeight;
+
+  let j;
+  try {
+    const r = await fetch('api/upload.php', {method:'POST', body: fd});
+    if (r.status === 401) { location.reload(); return; }
+    j = await r.json();
+  } catch (e) {
+    j = {ok:false, error:'Opplastingen nådde ikke fram: ' + e};
+  }
+  if (!j.ok) {
+    // Legg alt tilbake slik det stod. Ellers har brukeren mistet både teksten
+    // og filene han nettopp fant fram, og har ingen måte å få dem igjen på.
+    pendingAtts = sendes; inp.value = text; drawTray();
+    alert(j.error || 'opplasting feilet');
+  }
+  // Uansett utfall: tving en ny tegning, slik at den optimistiske boblen (som
+  // peker på objekt-URL-er vi straks frigir) erstattes av serverens versjon.
+  cache.chat = null;
+  await poll();
+  if (j.ok) sendes.forEach(a => a.url && URL.revokeObjectURL(a.url));
 }
 
 async function commentThought(id){

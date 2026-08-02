@@ -127,6 +127,64 @@ function get_settings(): array {
     return mfindone('settings', ['_id' => 'main']) ?? [];
 }
 
+// -------------------------------------------------------------- chatvedlegg
+
+/**
+ * Vedlegg brukeren drar inn i chatten.
+ *
+ * Filene lagres UTENFOR webroot og repo (repoet er offentlig på GitHub), i
+ * månedskataloger under UPLOAD_DIR. De er derfor aldri nåbare via nginx – kun
+ * gjennom vedlegg.php, som krever nøyaktig samme innloggede sesjon som resten
+ * av dashbordet. Regler og typeliste bor her fordi BÅDE api/upload.php (som
+ * tar imot) og vedlegg.php (som serverer) må være enige om dem; to kopier
+ * ville før eller siden sprike, og et sprik her er et hull.
+ */
+const UPLOAD_DIR = '/var/lib/mind/uploads';
+const UPLOAD_MAX_BYTES = 15 * 1024 * 1024;   // 15 MB per fil
+const UPLOAD_MAX_FILES = 8;                  // per melding
+
+/** Tillatt utvidelse -> kanonisk MIME-type. Alt annet avvises. */
+const UPLOAD_TYPES = [
+    'png'  => 'image/png',
+    'jpg'  => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'gif'  => 'image/gif',
+    'webp' => 'image/webp',
+    'pdf'  => 'application/pdf',
+    'txt'  => 'text/plain',
+    'md'   => 'text/markdown',
+    'csv'  => 'text/csv',
+    'json' => 'application/json',
+    'log'  => 'text/plain',
+];
+
+/** Utvidelser som vises inline i nettleseren; resten lastes ned. */
+const UPLOAD_INLINE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'];
+
+/**
+ * Relativ vedleggssti («2026-08/xxx.png») -> absolutt sti, eller null.
+ *
+ * Slår ned på alt som ikke er nøyaktig én månedskatalog og ett flatt filnavn,
+ * og krever til slutt at den OPPLØSTE stien ligger under UPLOAD_DIR – det
+ * fanger også symlenker som peker ut av katalogen.
+ */
+function upload_resolve(string $rel): ?string {
+    if (!preg_match('#^\d{4}-\d{2}/[A-Za-z0-9._-]+$#', $rel)) return null;
+    if (strpos($rel, '..') !== false) return null;
+    $base = realpath(UPLOAD_DIR);
+    $path = realpath(UPLOAD_DIR . '/' . $rel);
+    if ($base === false || $path === false || !is_file($path)) return null;
+    if (strpos($path, $base . '/') !== 0) return null;
+    return $path;
+}
+
+/** Lesbar størrelse på norsk – går inn i selve chatteksten, så den må være kort. */
+function upload_fmt_size(int $bytes): string {
+    if ($bytes < 1024) return $bytes . ' B';
+    if ($bytes < 1024 * 1024) return (int)round($bytes / 1024) . ' KB';
+    return number_format($bytes / (1024 * 1024), 1, ',', ' ') . ' MB';
+}
+
 // ------------------------------------------------------------------ secrets
 
 function enc_key(): string {
