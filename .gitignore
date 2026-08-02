@@ -6,6 +6,10 @@ logs/
 agentwork/
 data/
 
+# Publiseringskatalog: artefakter MIND produserer for nettleservisning.
+# Skal aldri pushes.
+artefact/
+
 # secrets.conf ligger normalt utenfor repoet i /etc/mind/, men ignoreres
 # eksplisitt her som forsvar i dybden mot at en lokal kopi ved et uhell
 # committes.
