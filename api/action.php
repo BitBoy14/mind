@@ -138,43 +138,11 @@ case 'save_settings':
     if (isset($in['max_parallel_agents'])) $patch['max_parallel_agents'] = max(1, (int)$in['max_parallel_agents']);
     if (isset($in['night_curation_hour'])) $patch['night_curation_hour'] = min(23, max(0, (int)$in['night_curation_hour']));
     if (isset($in['daily_token_budget'])) $patch['daily_token_budget'] = max(0, (int)$in['daily_token_budget']);
-    if (isset($in['require_approval_selfinit'])) $patch['require_approval_selfinit'] = (bool)$in['require_approval_selfinit'];
     if (!in_array($patch['engine'] ?? 'api', ['api', 'claude_code'], true)) unset($patch['engine']);
     if ($patch) mupdate('settings', ['_id' => 'main'], ['$set' => $patch]);
     if (!empty($in['api_key'])) {
         save_secret('anthropic_api_key', trim((string)$in['api_key']));
         refresh_models();
-    }
-    ok();
-
-case 'task_decide':
-    // Godkjenn eller avslå en selvinitiert agentoppgave. Et avslag med
-    // begrunnelse er den eneste måten hjernen lærer hvor grensen går, så
-    // begrunnelsen sendes videre som hendelse den leser i neste syklus.
-    $id = (string)($in['id'] ?? '');
-    $approve = (bool)($in['approve'] ?? false);
-    $grunn = trim((string)($in['reason'] ?? ''));
-    $t = mfindone('agent_tasks', ['_id' => oid($id)]);
-    if (!$t) fail('ukjent oppgave', 404);
-    if (($t['status'] ?? '') !== 'avventer_ja') fail('oppgaven venter ikke på svar');
-    if ($approve) {
-        mupdate('agent_tasks', ['_id' => oid($id)],
-            ['$set' => ['status' => 'queued', 'approved_ts' => microtime(true)]]);
-        mind_event('task_approved',
-            'Bruker GODKJENTE den selvinitierte oppgaven «' . ($t['title'] ?? '') . '».'
-            . ($grunn !== '' ? ' Kommentar: ' . $grunn : ''),
-            ['task_id' => $id], 2);
-    } else {
-        mupdate('agent_tasks', ['_id' => oid($id)],
-            ['$set' => ['status' => 'avslaatt', 'finished_ts' => microtime(true),
-                        'result' => 'Avslått av bruker'
-                                  . ($grunn !== '' ? ': ' . $grunn : '.')]]);
-        mind_event('task_rejected',
-            'Bruker AVSLO den selvinitierte oppgaven «' . ($t['title'] ?? '') . '».'
-            . ($grunn !== '' ? ' Begrunnelse: ' . $grunn
-                             : ' Ingen begrunnelse oppgitt.')
-            . ' Merk deg hvorfor, så du treffer grensen bedre neste gang.',
-            ['task_id' => $id], 1);
     }
     ok();
 

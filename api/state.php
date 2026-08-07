@@ -38,7 +38,6 @@ $budget = [
     'used' => $brukt_i_dag,
     'limit' => $budsjett,
     'exhausted' => $budsjett > 0 && $brukt_i_dag >= $budsjett,
-    'require_approval_selfinit' => (bool)($s['require_approval_selfinit'] ?? false),
 ];
 
 $agents = [
@@ -47,11 +46,6 @@ $agents = [
     'running' => mfind('agent_tasks', ['status' => ['$in' => ['running', 'cancelling']]],
         ['sort' => ['started_ts' => 1]]),
     'queued' => mfind('agent_tasks', ['status' => 'queued'], ['sort' => ['priority' => 1, 'created_ts' => 1]]),
-    // Selvinitierte oppgaver som venter på ja fra brukeren. De ligger først
-    // i dashbordet: en oppgave som venter på svar er det eneste her som
-    // faktisk står stille i påvente av et menneske.
-    'avventer_ja' => mfind('agent_tasks', ['status' => 'avventer_ja'],
-        ['sort' => ['priority' => 1, 'created_ts' => 1]]),
     'finished' => mfind('agent_tasks',
         ['status' => ['$in' => ['done', 'failed', 'cancelled', 'cancel_failed']]],
         ['sort' => ['finished_ts' => -1], 'limit' => 15]),
@@ -85,6 +79,13 @@ $admin = [
 ];
 
 $cycles = mfind('cycles', [], ['sort' => ['ts' => -1], 'limit' => 8, 'projection' => ['raw' => 0]]);
+
+// Verktøy MIND har bygget. Rent lesende herfra: rader skrives av
+// tools/registrer_verktoy.py (db.register_tool), aldri av dashbordet – ingen
+// nye skrive-endepunkter, og ingen ny flate uten samme innlogging som resten
+// (require_auth_api() øverst i filen gjelder hele svaret).
+// created er en YYYY-MM-DD-streng, så synkende sortering blir kronologisk.
+$tools = mfind('tools', [], ['sort' => ['created' => -1, 'name' => 1]]);
 
 $models = $s['models_cache']['models'] ?? ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
 
@@ -122,6 +123,7 @@ echo json_encode([
     'agents' => $agents,
     'memory' => $memory,
     'admin' => $admin,
+    'tools' => $tools,
     'cycles' => $cycles,
     'models' => $models,
     'now' => microtime(true),

@@ -15,6 +15,7 @@ etter restart uten tap (§2). Samlinger:
   prompts         - overstyrbare prompter (godkjente promptendringer)
   admin_proposals - selvutviklingsforslag til godkjenning
   cycles          - logg over hovedhjerne-sykluser (dashbordets «Nå»)
+  tools           - verktøy MIND har bygget (dashbordets «Verktøy»)
 """
 import time
 
@@ -59,6 +60,9 @@ def ensure_indexes():
                                    ("last_used_ts", ASCENDING)])
     d.memory_archive.create_index([("archived_ts", DESCENDING)])
     d.cycles.create_index([("ts", DESCENDING)])
+    # Navnet er nøkkelen registreringen upserter på – uniktheten må ligge i
+    # basen, ellers kan to samtidige registreringer lage hver sin rad.
+    d.tools.create_index([("name", ASCENDING)], unique=True)
 
 
 # ------------------------------------------------------------- detaljminner
@@ -240,15 +244,16 @@ CANCEL_PENDING_STATUSES = ["queued", "running", "cancelling"]
 
 
 def create_agent_task(title, brief, task_type="bygg", priority=3,
-                      created_by="brain", status="queued", selfinit=False):
-    """Opprett en agentoppgave.
+                      created_by="brain", selfinit=False):
+    """Opprett en agentoppgave. Den går rett i køen og starter av seg selv.
 
-    status='avventer_ja' parkerer oppgaven til brukeren godkjenner den;
-    agent-manageren plukker bare 'queued'. selfinit merker at hjernen fant på
-    oppgaven selv, slik at dashbordet kan skille den fra en bestilling.
+    selfinit merker at hjernen fant på oppgaven selv i stedet for å ha fått
+    den bestilt. Det er en opplysning, ikke en sperre: dashbordet og
+    beslutningsloggen skal vise hva som var eget initiativ, men ingenting
+    står og venter på et menneske.
     """
     doc = {"created_ts": time.time(), "title": title, "brief": brief,
-           "type": task_type, "priority": priority, "status": status,
+           "type": task_type, "priority": priority, "status": "queued",
            "created_by": created_by, "selfinit": selfinit,
            "started_ts": None, "finished_ts": None,
            "result": None, "assessment": None, "files": [], "progress": "",
@@ -422,6 +427,60 @@ def add_admin_proposal(kind, title, body, payload=None):
 def pending_proposals():
     return list(db().admin_proposals.find({"status": "pending"})
                 .sort("ts", ASCENDING))
+
+
+# ------------------------------------------------------------------ verktøy
+
+# Statusene dashbordet fargelegger. Listen er lukket med vilje: «under bygging»
+# og «i drift» må bety det samme uansett hvilken agent som skrev raden, ellers
+# er statuskolonnen bare fritekst med farge på.
+TOOL_STATUSES = ("under bygging", "i drift", "prototyp", "pauset", "avviklet")
+
+
+def register_tool(name, stack, path, does, why, created, status="i drift",
+                  registered_by="agent"):
+    """Registrer (eller oppdater) et verktøy MIND har bygget.
+
+    Upsert på navn: en agent som kjører registreringen på nytt etter en endring
+    skal rette raden, ikke lage en til. `created` er datoen verktøyet ble
+    laget (YYYY-MM-DD) og settes kun ved første registrering – den beskriver
+    verktøyet, ikke sist noen rørte raden.
+
+    Alle felt er påkrevd fordi det er nettopp de manglende feltene som gjør en
+    verktøyliste verdiløs: en rad uten «hvorfor» sier ikke om verktøyet
+    fortsatt løser et problem noen har.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("verktøyet må ha et navn")
+    if status not in TOOL_STATUSES:
+        raise ValueError("ukjent status %r – bruk en av: %s"
+                         % (status, ", ".join(TOOL_STATUSES)))
+    mangler = [f for f, v in (("stack", stack), ("path", path), ("does", does),
+                              ("why", why), ("created", created)) if not v]
+    if mangler:
+        raise ValueError("mangler felt: " + ", ".join(mangler))
+    now = time.time()
+    db().tools.update_one(
+        {"name": name},
+        {"$set": {"stack": stack, "path": path, "does": does, "why": why,
+                  "status": status, "updated_ts": now,
+                  "registered_by": registered_by},
+         "$setOnInsert": {"name": name, "created": created,
+                          "registered_ts": now}},
+        upsert=True)
+    return db().tools.find_one({"name": name})
+
+
+def list_tools():
+    """Alle registrerte verktøy, nyeste først (etter opprettet-dato)."""
+    return list(db().tools.find().sort([("created", DESCENDING),
+                                        ("name", ASCENDING)]))
+
+
+def remove_tool(name):
+    """Fjern en rad. Returnerer True hvis noe faktisk ble slettet."""
+    return db().tools.delete_one({"name": (name or "").strip()}).deleted_count > 0
 
 
 # ------------------------------------------------------------------ cycles

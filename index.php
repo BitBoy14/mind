@@ -81,6 +81,15 @@ input:focus,textarea:focus { outline:none; border-color:var(--accent); }
 .status-done { color:var(--green); } .status-failed,.status-cancelled { color:var(--red); }
 /* avbrudd bestilt, prosessen ennå ikke bekreftet død – og avbrudd som slo feil */
 .status-cancelling { color:var(--amber); } .status-cancel_failed { color:var(--purple); }
+/* Verktøystatuser. Egne klasser fordi de betyr noe annet enn oppgavestatusene:
+   «i drift» er en varig tilstand, ikke et ferdig resultat. */
+.vstatus { font-size:10px; text-transform:uppercase; border-radius:4px;
+  padding:0 5px; border:1px solid currentColor; margin-right:5px; }
+.v-drift { color:var(--green); } .v-bygging { color:var(--amber); }
+.v-prototyp { color:var(--purple); } .v-pauset { color:var(--dim); }
+.v-avviklet { color:var(--red); }
+.vsti { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+  color:var(--dim); }
 .meter { height:9px; background:var(--panel2); border-radius:5px; overflow:hidden; margin:6px 0; }
 .meter > div { height:100%; background:var(--accent); }
 .tabs { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
@@ -473,6 +482,13 @@ async function doLogin(){
       <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5.8A3 3 0 0 0 8 17a3 3 0 0 0 3 3V7a3 3 0 0 0-2-3z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5.8A3 3 0 0 1 16 17a3 3 0 0 1-3 3V7a3 3 0 0 1 2-3z"/></svg> Minnet</h2>
       <div class="body" id="membody"></div>
     </div>
+    <!-- Verktøy MIND har bygget. Rader kommer fra samlingen 'tools' via
+         api/state.php – samme innlogging som resten av dashbordet, og ingen
+         skriving herfra (registrering går via tools/registrer_verktoy.py). -->
+    <div class="panel msec" data-sec="tools">
+      <h2><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Verktøy <span class="muted" id="toolscount"></span></h2>
+      <div class="body" id="toolsbody"></div>
+    </div>
   </div>
   <div id="chatpanel" class="msec" data-sec="chat">
     <div class="panel">
@@ -607,7 +623,7 @@ function draw(){
   document.getElementById('admincount').textContent = pend;
   document.getElementById('stagnbadge').style.display = st.stagnation ? '' : 'none';
 
-  drawAdmin(); drawNow(); drawThoughts(); drawAgents(); drawMemory(); drawChat();
+  drawAdmin(); drawNow(); drawThoughts(); drawAgents(); drawMemory(); drawTools(); drawChat();
   drawMobile();
 }
 
@@ -665,6 +681,7 @@ function drawAgents(){
     return `<div class="item">
       <span class="status-${esc(t.status)}">●</span> <b>${esc(t.title)}</b>
       <span class="kindtag">${esc(t.type)}</span>
+      ${t.selfinit ? '<span class="kindtag" title="Hjernen fant på denne selv">selvinitiert</span>' : ''}
       <span class="ts">${esc(t.status)}${dur !== null ? ' · ' + dur + ' min' : ''} · ${ago(t.finished_ts || t.started_ts || t.created_ts)}</span>
       ${t.progress ? `<div class="muted">${esc(t.progress)}</div>` : ''}
       ${t.result ? `<div class="muted mclamp" style="white-space:pre-wrap">${esc(String(t.result).slice(0,300))}</div>` : ''}
@@ -674,33 +691,10 @@ function drawAgents(){
         ? ` <span class="muted clicky" onclick="cancelTask('${t._id}')">✕ avbryt</span>` : ''}
     </div>`;
   };
-  // Selvinitierte oppgaver som venter på ja. De står øverst fordi de er det
-  // eneste her som faktisk står stille i påvente av et menneske.
-  const venter = (a.avventer_ja || []).map(t => `
-    <div class="item" style="border-left:3px solid var(--amber); padding-left:9px">
-      <span class="kindtag">venter på deg</span> <b>${esc(t.title)}</b>
-      <span class="kindtag">${esc(t.type)}</span>
-      <span class="ts">${ago(t.created_ts)}</span>
-      <div style="margin-top:6px">
-        <button class="primary" onclick="decideTask('${t._id}',true)">Godkjenn</button>
-        <button class="danger" onclick="decideTask('${t._id}',false)">Avslå</button>
-        <span class="muted clicky" onclick="openTask('${t._id}')">${ICO.folder} se oppdraget</span>
-      </div>
-    </div>`).join('');
-
   render('agentsbody', a,
-    (venter.length + a.running.length + a.queued.length + a.finished.length) === 0
+    (a.running.length + a.queued.length + a.finished.length) === 0
       ? '<div class="muted">Ingen agentoppgaver ennå.</div>'
-      : venter + a.running.map(row).join('') + a.queued.map(row).join('') + a.finished.map(row).join(''));
-}
-
-async function decideTask(id, approve){
-  // Et avslag uten begrunnelse lærer hjernen ingenting om hvor grensen går.
-  const reason = approve
-    ? (prompt('Godkjenner. Kommentar til hjernen (valgfritt):') ?? '')
-    : (prompt('Avslår. Hvorfor? Dette er det hjernen lærer av:') ?? '');
-  await api({action:'task_decide', id, approve, reason});
-  poll();
+      : a.running.map(row).join('') + a.queued.map(row).join('') + a.finished.map(row).join(''));
 }
 
 let memTab = 'seksjoner';
@@ -755,6 +749,33 @@ async function memSearch(){
     <div class="item clicky" onclick="openMemDoc('${h._col}','${h._id}')">
       <span class="kindtag">${esc(h._col)}</span><b>${esc(h.title)}</b></div>`).join('')
     || '<div class="muted">Ingen treff.</div>';
+}
+
+// ------------------------------------------------------------------ verktøy
+// Ren visning. Rader legges inn av tools/registrer_verktoy.py, aldri herfra:
+// dashbordet fikk ingen nye skrive-endepunkter av denne modulen.
+const VSTATUS = {
+  'i drift': 'v-drift', 'under bygging': 'v-bygging', 'prototyp': 'v-prototyp',
+  'pauset': 'v-pauset', 'avviklet': 'v-avviklet',
+};
+
+function drawTools(){
+  const v = S.tools || [];
+  // Under bygging øverst: det er den eneste statusen der noe er i bevegelse.
+  const rekkefolge = t => (t.status === 'under bygging' ? 0 : 1);
+  const sortert = v.slice().sort((a, b) => rekkefolge(a) - rekkefolge(b));
+  document.getElementById('toolscount').textContent = v.length ? '· ' + v.length : '';
+  render('toolsbody', v, sortert.map(t => `
+    <div class="item">
+      <span class="vstatus ${VSTATUS[t.status] || 'v-pauset'}">${esc(t.status)}</span>
+      <b>${esc(t.name)}</b>
+      <span class="ts">${esc(t.created || '')}</span>
+      <div class="vsti">${esc(t.path)}</div>
+      <div class="muted">${esc(t.stack)}</div>
+      <div class="mclamp" style="white-space:pre-wrap">${esc(t.does)}</div>
+      <div class="muted mclamp" style="white-space:pre-wrap"><i>Hvorfor:</i> ${esc(t.why)}</div>
+    </div>`).join('')
+    || '<div class="muted">Ingen verktøy registrert ennå. Agenter legger dem inn med tools/registrer_verktoy.py.</div>');
 }
 
 const fmtBytes = b => b < 1024 ? b + ' B'
@@ -1043,10 +1064,6 @@ function openSettings(){
     <div class="formrow"><label>Døgnbudsjett (ut-tokens)</label>
       <input type="number" id="set_budget" value="${(S.budget && S.budget.limit) || 0}" min="0" step="50000" style="width:130px">
       <span class="muted">0 = ingen brems. Stopper kun autonome økter; chat svarer alltid.</span></div>
-    <div class="formrow"><label>Selvinitiert arbeid</label>
-      <label style="width:auto"><input type="checkbox" id="set_approval"
-        ${(S.budget && S.budget.require_approval_selfinit) ? 'checked' : ''}>
-        må godkjennes før agenter starter</label></div>
     <p><button class="primary" onclick="saveSettings()">Lagre</button>
        <button onclick="api({action:'refresh_models'}).then(()=>{poll();closeModal();})">↻ Oppdater modelliste</button>
        <button onclick="closeModal()">Avbryt</button></p>`);
@@ -1063,7 +1080,6 @@ async function saveSettings(){
     max_parallel_agents: document.getElementById('set_maxagents').value,
     night_curation_hour: document.getElementById('set_night').value,
     daily_token_budget: document.getElementById('set_budget').value,
-    require_approval_selfinit: document.getElementById('set_approval').checked,
   };
   const key = document.getElementById('set_apikey').value.trim();
   if (key) payload.api_key = key;
@@ -1082,6 +1098,7 @@ const MSECS = [
   {id:'thoughts', label:'Tankestrøm',  icon:ICO.stream},
   {id:'agents',   label:'Agenter',     icon:ICO.tasks},
   {id:'memory',   label:'Minnet',      icon:ICO.brain},
+  {id:'tools',    label:'Verktøy',     icon:ICO.wrench18},
   {id:'admin',    label:'Godkjenning', icon:ICO.wrench18},
 ];
 let mSec = 'chat';   // chat er standardvisningen
@@ -1133,6 +1150,7 @@ function mSub(){
   else if (mSec === 'thoughts') t = S.thoughts.length + ' tanker';
   else if (mSec === 'agents')   t = a.running.length + ' kjører · ' + a.queued.length + ' i kø';
   else if (mSec === 'memory')   t = Math.round(100 * m.total_tokens / m.max_tokens) + '% av minnet brukt';
+  else if (mSec === 'tools')    t = (S.tools || []).length + ' verktøy';
   else if (mSec === 'admin')    t = S.admin.pending.length + ' venter på svar';
   el.textContent = t;
 }
@@ -1159,6 +1177,7 @@ function drawMobile(){
   cnt('thoughts', S.thoughts.length || '');
   cnt('agents', a.running.length ? `<span class="badge" style="background:var(--amber)">${a.running.length}</span>` : '');
   cnt('memory', Math.round(100 * S.memory.total_tokens / S.memory.max_tokens) + '%');
+  cnt('tools', (S.tools || []).length || '');
   cnt('admin', pend ? `<span class="badge">${pend}</span>` : '');
   cnt('now', st.stagnation ? '<span class="badge" style="background:var(--amber)">!</span>' : '');
 

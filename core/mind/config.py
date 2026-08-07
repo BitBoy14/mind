@@ -61,9 +61,6 @@ DEFAULT_SETTINGS = {
     # den har igjen og styrer selv etter det; ved tomt budsjett stanses
     # autonomt arbeid, mens chatten fortsatt svarer.
     "daily_token_budget": 400_000,
-    # Agentoppgaver hjernen finner på selv må godkjennes før de kjører.
-    # Oppgaver som springer ut av noe brukeren ba om i chat, går rett gjennom.
-    "require_approval_selfinit": True,
 }
 
 # Minnehierarkiets rammer (§4)

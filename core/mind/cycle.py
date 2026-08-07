@@ -124,9 +124,11 @@ def _render_budget():
 def _bestilt_av_bruker(events):
     """Sprang denne syklusen ut av noe brukeren sa?
 
-    Skillet avgjør om nye agentoppgaver kan starte selv eller må godkjennes.
-    Det leses av hendelsene, ikke av hjernens egen merking: en regel den kan
-    omgå ved å kalle sitt eget påfunn en bestilling, er ingen regel.
+    Skillet stanser ingenting lenger – alle agentoppgaver starter direkte.
+    Det avgjør bare merkingen (selfinit) og ordlyden i beslutningsloggen, slik
+    at dashbordet fortsatt viser hva hjernen satte i gang på eget initiativ.
+    Det leses av hendelsene, ikke av hjernens egen merking: en merkelapp den
+    selv kan velge, forteller ingenting om hvor oppgaven kom fra.
     """
     return any(e.get("type") in ("chat_msg", "comment", "admin_decision")
                for e in events or [])
@@ -230,19 +232,16 @@ def _apply_result(res, kind, events=None):
         except (TypeError, ValueError):
             # «prioritet: høy» skal koste prioriteten, ikke hele effektueringen
             prioritet = 3
-        krev_ja = (db.get_settings().get("require_approval_selfinit", False)
-                   and not bestilt)
+        # Alle agentoppgaver går rett i køen – også dem hjernen finner på selv.
+        # Merkingen blir stående: den er ikke en port, men et spor, slik at
+        # dashbordet og beslutningsloggen viser hva som var eget initiativ.
         t = db.create_agent_task(a.get("tittel", "Uten tittel"),
                                  a.get("oppdrag", ""),
                                  a.get("type", "bygg"),
                                  prioritet,
-                                 status="avventer_ja" if krev_ja else "queued",
                                  selfinit=not bestilt)
-        if krev_ja:
-            decisions.append(f"agentoppgave '{t['title']}' venter på godkjenning "
-                             "(selvinitiert)")
-        else:
-            decisions.append(f"opprettet agentoppgave '{t['title']}'")
+        decisions.append(f"opprettet agentoppgave '{t['title']}'"
+                         + ("" if bestilt else " (selvinitiert)"))
 
     for tid in res.get("avbryt_oppgaver") or []:
         try:

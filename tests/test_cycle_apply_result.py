@@ -15,7 +15,7 @@ lagringen, og `_apply_result` kaller aldri modellen selv.
 import pytest
 from bson import ObjectId
 
-from mind import config, cycle, db
+from mind import cycle, db
 
 
 # ------------------------------------------------------------------ tomt/minimalt svar
@@ -173,25 +173,19 @@ def test_bestilt_agentoppgave_gaar_rett_i_ko(fake_db):
     assert beslutninger == ["opprettet agentoppgave 'Bygg testsuite'"]
 
 
-def test_selvinitiert_agentoppgave_venter_paa_godkjenning(fake_db):
-    """Uten en utløsende brukerhendelse er oppgaven hjernens eget påfunn."""
+def test_selvinitiert_agentoppgave_gaar_ogsaa_rett_i_ko(fake_db):
+    """Hjernens eget påfunn starter uten å spørre – men merkes som eget.
+
+    Porten som parkerte selvinitiert arbeid på 'avventer_ja' er fjernet.
+    Merkingen står igjen: den er et spor i dashbordet og beslutningsloggen,
+    ikke en sperre, så det er fortsatt synlig hva hjernen satte i gang selv.
+    """
     beslutninger = cycle._apply_result(OPPGAVE, "tanke", [])
-    (t,) = fake_db.agent_tasks.docs
-    assert t["status"] == "avventer_ja"
-    assert t["selfinit"] is True
-    assert beslutninger == [
-        "agentoppgave 'Bygg testsuite' venter på godkjenning (selvinitiert)"]
-
-
-def test_selvinitiert_gaar_rett_i_ko_naar_porten_er_av(fake_db):
-    fake_db.settings.docs[:] = []
-    s = dict(config.DEFAULT_SETTINGS)
-    s["require_approval_selfinit"] = False
-    fake_db.settings.docs.append(s)
-    cycle._apply_result(OPPGAVE, "tanke", [])
     (t,) = fake_db.agent_tasks.docs
     assert t["status"] == "queued"
     assert t["selfinit"] is True
+    assert beslutninger == [
+        "opprettet agentoppgave 'Bygg testsuite' (selvinitiert)"]
 
 
 def test_kommentar_og_admin_svar_teller_som_bestilling(fake_db):
